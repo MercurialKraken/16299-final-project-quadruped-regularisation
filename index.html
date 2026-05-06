@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exploring Jitter Reduction in RL Locomotion Policies — 16-299 Final</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-svg.js"></script>
+<style>
+:root {
+  --bg: #FBF9F3;
+  --bg2: #F3F0E5;
+  --bg3: #E8E3D2;
+  --text: #1A1814;
+  --text2: #4A4640;
+  --text3: #8A857B;
+  --rule: rgba(26,24,20,0.12);
+  --accent: #B5341B;
+  --accent2: #1F4D3E;
+  --accent3: #8A6D3B;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Newsreader', Georgia, serif;
+  font-weight: 400;
+  font-size: 17px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(26,24,20,0.025) 1px, transparent 1px);
+  background-size: 4px 4px;
+  z-index: 0;
+}
+
+header {
+  border-bottom: 1px solid var(--rule);
+  padding: 18px 0;
+  background: var(--bg);
+  position: relative;
+  z-index: 2;
+}
+
+.header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .1em;
+  color: var(--text3);
+  text-transform: uppercase;
+}
+
+.masthead {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 80px 32px 48px;
+  border-bottom: 2px solid var(--text);
+  position: relative;
+  z-index: 2;
+}
+
+.eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .14em;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-bottom: 24px;
+}
+
+.masthead h1 {
+  font-family: 'Newsreader', serif;
+  font-size: clamp(38px, 5.5vw, 68px);
+  line-height: 1.05;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin-bottom: 16px;
+  max-width: 18ch;
+}
+
+.masthead h1 em {
+  font-style: italic;
+  color: var(--accent);
+  font-weight: 400;
+}
+
+.subtitle {
+  font-size: 21px;
+  font-style: italic;
+  color: var(--text2);
+  margin-bottom: 36px;
+  max-width: 56ch;
+  line-height: 1.45;
+}
+
+.byline {
+  display: flex;
+  gap: 40px;
+  flex-wrap: wrap;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  color: var(--text2);
+}
+
+.byline-item span:first-child {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .1em;
+  color: var(--text3);
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 4px;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 48px 32px 0;
+  position: relative;
+  z-index: 2;
+}
+
+.body-wrapper {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 48px;
+  align-items: start;
+}
+
+.toc {
+  position: sticky;
+  top: 32px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .04em;
+  padding-top: 8px;
+}
+
+.toc-label {
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.toc ol { list-style: none; counter-reset: tocnum; }
+.toc li {
+  counter-increment: tocnum;
+  margin-bottom: 8px;
+  display: flex;
+  gap: 10px;
+}
+.toc li::before {
+  content: counter(tocnum, decimal-leading-zero);
+  color: var(--text3);
+  font-size: 10px;
+  padding-top: 1px;
+  flex-shrink: 0;
+}
+.toc a { color: var(--text2); text-decoration: none; transition: color .15s; }
+.toc a:hover { color: var(--accent); }
+
+article { max-width: 720px; }
+article section { margin-bottom: 56px; }
+
+.section-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .14em;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  display: block;
+}
+
+article h2 {
+  font-family: 'Newsreader', serif;
+  font-size: 32px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 12px;
+  line-height: 1.15;
+}
+
+article h3 {
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-size: 21px;
+  font-weight: 500;
+  margin-top: 32px;
+  margin-bottom: 12px;
+}
+
+article p {
+  margin-bottom: 16px;
+  font-size: 17px;
+  line-height: 1.75;
+}
+
+article p strong { font-weight: 600; }
+
+#abstract > p:first-of-type::first-letter {
+  font-family: 'Newsreader', serif;
+  font-size: 64px;
+  font-weight: 500;
+  float: left;
+  line-height: 0.9;
+  margin: 6px 8px -2px 0;
+  color: var(--accent);
+}
+
+.pullquote {
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-size: 22px;
+  line-height: 1.45;
+  border-left: 3px solid var(--accent);
+  padding: 8px 0 8px 24px;
+  margin: 28px 0;
+}
+
+.eq {
+  background: var(--bg2);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 18px 24px;
+  margin: 18px 0;
+  overflow-x: auto;
+}
+
+.eq-num {
+  float: right;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 6px;
+}
+
+figure {
+  margin: 28px 0;
+  background: var(--bg2);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 20px;
+}
+
+figure img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 2px;
+}
+
+figure svg { width: 100%; height: auto; display: block; max-width: 100%; }
+figure svg text { font-size: inherit; }
+
+figcaption {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text3);
+  font-style: italic;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+
+figcaption strong {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.table-wrap {
+  margin: 24px 0;
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+}
+
+th {
+  background: var(--bg3);
+  text-align: left;
+  padding: 10px 14px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--rule);
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+
+td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--text2);
+}
+
+tr:last-child td { border-bottom: none; }
+tr.winner td { background: rgba(31,77,62,0.08); color: var(--text); font-weight: 500; }
+tr.disaster td { background: rgba(181,52,27,0.08); color: var(--accent); }
+
+.callout {
+  background: var(--bg2);
+  border-left: 3px solid var(--accent2);
+  padding: 16px 22px;
+  margin: 22px 0;
+  font-size: 15px;
+  line-height: 1.65;
+  border-radius: 0 4px 4px 0;
+}
+
+.callout-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--accent2);
+  margin-bottom: 6px;
+}
+
+code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  background: var(--bg2);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+cite {
+  font-style: normal;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  vertical-align: super;
+  color: var(--accent);
+  font-weight: 500;
+  letter-spacing: .04em;
+}
+
+.refs { font-family: 'Inter', sans-serif; font-size: 13px; line-height: 1.6; }
+.ref {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+  color: var(--text2);
+  padding-bottom: 12px;
+  border-bottom: 1px dotted var(--rule);
+}
+.ref:last-child { border-bottom: none; }
+.ref-num { font-family: 'JetBrains Mono', monospace; color: var(--accent); font-size: 11px; padding-top: 2px; }
+.ref em { color: var(--text); font-style: italic; }
+
+footer {
+  border-top: 2px solid var(--text);
+  margin-top: 64px;
+  padding: 32px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .1em;
+  color: var(--text3);
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  position: relative;
+  z-index: 2;
+}
+
+a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
+a:hover { color: var(--text); }
+
+@media (max-width: 900px) {
+  .body-wrapper { grid-template-columns: 1fr; }
+  .toc { position: relative; top: 0; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--rule); }
+  article { max-width: 100%; }
+  main { padding: 32px 24px 0; }
+  .masthead { padding: 60px 24px 36px; }
+  .header-inner { padding: 0 24px; }
+  body { font-size: 16px; }
+  article p { font-size: 16px; }
+  article h2 { font-size: 26px; }
+  .pullquote { font-size: 19px; padding-left: 18px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <span>16-299 · Spring 2026</span>
+    <span>Carnegie Mellon University</span>
+    <span>Final Project Report</span>
+  </div>
+</header>
+
+<div class="masthead">
+  <div class="eyebrow">Reinforcement Learning · Quadruped Locomotion · Generative Modelling</div>
+  <h1>Exploring <em>Jitter-Reduction</em> Methods for Reinforcement Learning Locomotion Policies</h1>
+  <p class="subtitle">A systematic ablation across reward regularisation, online filtering, and flow-matched action refinement — applied to a Unitree Go1 in NVIDIA Isaac Sim, with nine variants compared head-to-head under push-recovery stress tests.</p>
+  <div class="byline">
+    <div class="byline-item">
+      <span>Authors</span>
+      Paul Colombo · Arnav Shah · Jack Gerdsen
+    </div>
+    <div class="byline-item">
+      <span>Course</span>
+      16-299 · Robotics
+    </div>
+    <div class="byline-item">
+      <span>Robot</span>
+      Unitree Go1 · Isaac Sim 5.1
+    </div>
+    <div class="byline-item">
+      <span>Headline</span>
+      −46 pp falls · −38% HF jitter
+    </div>
+  </div>
+</div>
+
+<main>
+<div class="body-wrapper">
+
+<nav class="toc">
+  <div class="toc-label">Contents</div>
+  <ol>
+    <li><a href="#abstract">Abstract</a></li>
+    <li><a href="#background">Background</a></li>
+    <li><a href="#fm">Flow Matching</a></li>
+    <li><a href="#method">Method</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#reflection">Reflections</a></li>
+    <li><a href="#references">References</a></li>
+  </ol>
+</nav>
+
+<article>
+
+<!-- ============== ABSTRACT ============== -->
+<section id="abstract">
+  <span class="section-num">§ 00 · Abstract</span>
+  <h2>Abstract</h2>
+  <p>Reinforcement learning policies trained for legged locomotion achieve high task performance but produce high-frequency, jittery motor commands that accelerate mechanical wear, increase energy consumption, and destabilise contact forces. We treat this as an experimental investigation: <strong>given a frozen, jittery PPO policy, what is the most effective way to reduce its action jitter while preserving — or improving — its task performance?</strong> We compare three families of jitter-reduction techniques: reward-side action-rate regularisation during PPO training, online causal low-pass filtering at deployment, and a learned post-hoc action refinement based on conditional flow matching. We benchmark these methods individually and in combination through a 9-variant ablation crossing three reward regularisation levels with four post-hoc smoothing schemes, evaluated on a Unitree Go1 in NVIDIA Isaac Sim under 80-environment push-recovery stress tests with 50–500 N lateral impulses. The best configuration — moderate reward regularisation paired with a flow-matched refinement trained on physics-aware optimal targets — achieves a <strong>46.25 percentage-point reduction in fall rate</strong> (50.00% → 3.75%) and <strong>−38% high-frequency spectral energy</strong>, while adding only ~6 ms of inference overhead per 20 ms control step. The ablation reveals a sharp interaction: removing reward regularisation weakens the flow's benefit, while pushing it too far breaks the policy so completely that the learned refinement collapses to total failure.</p>
+</section>
+
+<!-- ============== BACKGROUND ============== -->
+<section id="background">
+  <span class="section-num">§ 01 · Background</span>
+  <h2>Background</h2>
+
+  <h3>Why are RL policies jittery?</h3>
+  <p>A trained PPO policy <cite>[2]</cite> outputs $a_t = \mu_\theta(s_t)$. Because the policy network is locally Lipschitz in its observation, small state perturbations get amplified through its Jacobian:</p>
+  <div class="eq">$$\Delta a_t \approx J_{\mu}(s_{t-1}) \Delta s_t.$$</div>
+  <p>The PPO objective rewards task performance via the clipped surrogate</p>
+  <div class="eq">$$\mathcal{L}^{\text{PPO}}(\theta) = \mathbb{E}_t \left[ \min\!\left( r_t(\theta) \hat{A}_t,\; \text{clip}(r_t(\theta), 1{-}\epsilon, 1{+}\epsilon) \hat{A}_t \right) \right],$$</div>
+  <p>but contains no explicit incentive for smooth actuator commands. On the Unitree Go1's high-gain PD controller ($K_p{=}25,\, K_d{=}0.5$), discontinuous action jumps map directly into torque spikes every 20 ms, producing fluctuating ground reaction forces that destabilise contact. The downstream costs are real: gearbox wear, 20–40% higher instantaneous power draw, audible noise, reduced sim-to-real transfer success, and degraded recovery from disturbances.</p>
+
+  <h3>Three families of jitter-reduction methods</h3>
+  <p>We study three approaches that intervene at different stages of the policy lifecycle:</p>
+  <p><strong>(A) Reward-side regularisation.</strong> Add a penalty $\lambda \lVert a_t - a_{t-1} \rVert^2$ directly to the PPO reward, training the policy to prefer smooth actions. This is the IsaacLab default at $\lambda{=}{-}0.01$. It is conceptually clean — smoothness becomes a primary objective — but entangles smoothness with task performance during training, requires retraining whenever the smoothness target changes, and as we will show has a sharp sweet spot.</p>
+  <p><strong>(B) Online filtering.</strong> Apply a causal first-order Butterworth IIR low-pass to actions at deployment time, $y_n = (1{-}\alpha) y_{n-1} + \alpha x_n$ with cutoff $f_c{=}15$ Hz. Cheap and immediate, but task-blind: the filter cannot distinguish between meaningless oscillation and a legitimate rapid corrective action.</p>
+  <p><strong>(C) Learned post-hoc refinement.</strong> Train a generative model offline to map raw policy actions toward task-aware "optimal" targets, applied as a post-processing step at deployment. This is where flow matching comes in. It is computationally heavier than filtering but, in principle, can produce corrections that are both smooth <em>and</em> physics-aware.</p>
+  <p>We are particularly interested in the interaction between these methods. Are they substitutes or complements? Does combining them yield super-additive gains, or do they undo each other? The 9-variant ablation in this report is designed to answer exactly that.</p>
+</section>
+
+<!-- ============== FLOW MATCHING ============== -->
+<section id="fm">
+  <span class="section-num">§ 02 · Flow Matching</span>
+  <h2>A Brief Introduction to Flow Matching</h2>
+
+  <p>Of the three jitter-reduction methods studied, flow matching is the most novel and warrants explanation. Flow matching <cite>[1]</cite> is a simulation-free training procedure for continuous normalising flows that turns generative modelling into a clean supervised regression problem.</p>
+
+  <h3>From distributions to velocity fields</h3>
+  <p>Suppose we want to transport samples from a source distribution $q_0$ to a target $q_1$. A continuous normalising flow defines a time-dependent vector field $u_t(x)$ whose flow $\phi_t$ is the solution of the ODE</p>
+  <div class="eq">$$\frac{d}{dt} \phi_t(x_0) = u_t(\phi_t(x_0)),\qquad \phi_0(x_0) = x_0,$$</div>
+  <p>and whose induced probability path $p_t$ interpolates $p_0 = q_0$ and $p_1 = q_1$. The continuity equation links the two: $\partial_t p_t = -\nabla \cdot (u_t \, p_t)$. The naive flow-matching loss would regress a network $u_\theta$ against the marginal vector field,</p>
+  <div class="eq">$$\mathcal{L}_{\text{FM}}(\theta) = \mathbb{E}_{t \sim \mathcal{U}[0,1],\; x \sim p_t} \left\lVert u_\theta(t, x) - u_t(x) \right\rVert^2,$$</div>
+  <p>but the marginal $u_t(x)$ is intractable. The Cambridge MLG exposition <cite>[5]</cite> walks through the resolution clearly.</p>
+
+  <h3>Conditional flow matching</h3>
+  <p>Lipman et al. <cite>[1]</cite> show that conditioning on the endpoints $z = (x_0, x_1)$ — a <em>two-sided</em> conditioning — gives a tractable surrogate loss with the same gradient. The <strong>conditional flow matching</strong> objective is</p>
+  <div class="eq">$$\mathcal{L}_{\text{CFM}}(\theta) = \mathbb{E}_{t,\; (x_0, x_1) \sim q,\; x_t \sim p_t(\cdot \mid x_0, x_1)} \left\lVert u_\theta(t, x_t) - u_t(x_t \mid x_0, x_1) \right\rVert^2,$$<span class="eq-num">(CFM)</span></div>
+  <p>and remarkably $\nabla_\theta \mathcal{L}_{\text{CFM}} = \nabla_\theta \mathcal{L}_{\text{FM}}$. Training on the tractable conditional loss yields a network that learns the intractable marginal field <cite>[1]</cite>.</p>
+
+  <h3>Optimal transport paths</h3>
+  <p>The choice of conditional path matters. With a deterministic linear interpolation</p>
+  <div class="eq">$$x_t = (1-t)\, x_0 + t\, x_1,\qquad u_t(x_t \mid x_0, x_1) = x_1 - x_0,$$<span class="eq-num">(OT path)</span></div>
+  <p>the conditional vector field is constant along the path and equal to the displacement $x_1 - x_0$ — the optimal transport map under squared-Euclidean cost. This is the path we use throughout. Its key practical property is that learned marginal trajectories tend to be near-straight, which dramatically reduces the number of Euler integration steps needed at inference compared to diffusion models <cite>[6]</cite>.</p>
+
+  <figure>
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow matching path diagram" style="max-width:100%;height:auto;font-size:initial;">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1A1814"/></marker>
+  </defs>
+  <text x="360" y="22" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#8A857B" letter-spacing="0.1em">CONDITIONAL OT PATH FROM x₀ TO x₁</text>
+  <circle cx="100" cy="100" r="26" fill="#FBF9F3" stroke="#1A1814" stroke-width="1.5"/>
+  <text x="100" y="96" text-anchor="middle" font-family="Newsreader, serif" font-size="14" font-style="italic" fill="#1A1814">x₀</text>
+  <text x="100" y="112" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#8A857B">t = 0</text>
+  <circle cx="290" cy="100" r="14" fill="#FBF9F3" stroke="#1A1814" stroke-width="0.8" opacity="0.6"/>
+  <text x="290" y="100" text-anchor="middle" font-family="Newsreader, serif" font-size="11" font-style="italic" fill="#1A1814" dominant-baseline="central">xₜ</text>
+  <circle cx="470" cy="100" r="14" fill="#FBF9F3" stroke="#1A1814" stroke-width="0.8" opacity="0.4"/>
+  <text x="470" y="100" text-anchor="middle" font-family="Newsreader, serif" font-size="11" font-style="italic" fill="#1A1814" dominant-baseline="central">xₜ</text>
+  <circle cx="620" cy="100" r="26" fill="#FBF9F3" stroke="#B5341B" stroke-width="1.5"/>
+  <text x="620" y="96" text-anchor="middle" font-family="Newsreader, serif" font-size="14" font-style="italic" fill="#B5341B">x₁</text>
+  <text x="620" y="112" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#8A857B">t = 1</text>
+  <line x1="128" y1="100" x2="592" y2="100" stroke="#1A1814" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="360" y="78" text-anchor="middle" font-family="Newsreader, serif" font-style="italic" font-size="14" fill="#1A1814">x_t = (1−t)·x₀ + t·x₁</text>
+  <text x="360" y="138" text-anchor="middle" font-family="Newsreader, serif" font-size="13" fill="#4A4640">target velocity   <tspan font-style="italic">u_t(x_t | x₀, x₁) = x₁ − x₀</tspan>   (constant along path)</text>
+  <text x="360" y="170" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#8A857B" font-style="italic">A neural network u_θ(t, x_t, s) is trained to regress against this displacement at every sampled t.</text>
+</svg>
+    <figcaption><strong>Fig 1.</strong> The OT-path conditional vector field is the constant displacement $x_1 - x_0$. We additionally condition on the robot state $s$, learning $u_\theta(t, x_t, s)$.</figcaption>
+  </figure>
+
+  <h3>Why flow matching for jitter reduction?</h3>
+  <p>Three properties make flow matching well-suited to this problem. <strong>First</strong>, the regression target $x_1 - x_0$ is fixed and simple — the loss is a clean MSE against a constant displacement, producing stable training without the adversarial or score-matching instabilities of GANs and diffusion models. <strong>Second</strong>, the loss supervises $u_\theta$ at every $t \in [0,1]$ rather than just at the endpoint, acting as an implicit temporal regulariser against noisy targets. This matters because our optimal targets — described next — are computed by argmin over a finite candidate set and are themselves noisy. <strong>Third</strong>, inference via Euler integration with early stopping at $t_{\text{end}} \in [0,1]$ provides a continuous deployment-time intensity dial: $t_{\text{end}}{=}0$ recovers the raw policy, $t_{\text{end}}{=}1$ applies full correction, intermediate values blend smoothly. None of this is possible with a one-shot supervised regressor.</p>
+</section>
+
+<!-- ============== METHOD ============== -->
+<section id="method">
+  <span class="section-num">§ 03 · Method</span>
+  <h2>Method</h2>
+
+  <h3>Environment and base policies</h3>
+  <p>The Unitree Go1 is a 12-DOF quadruped (3 joints per leg). Action space is 12-D joint position offsets from the default stance; observations are 48-D proprioceptive (base linear/angular velocities, projected gravity, velocity commands, joint positions, joint velocities, previous actions). Sim runs at 200 Hz with decimation-4 → 50 Hz control. We train PPO for 300 iterations with 4096 parallel envs in NVIDIA Isaac Lab <cite>[3]</cite>, MLP[128,128,128] ELU actor and critic, GAE($\lambda{=}0.95$), discount $\gamma{=}0.99$, adaptive KL learning-rate schedule. The task is constant forward velocity tracking $v_x = 1.0$ m/s on flat terrain. We train <strong>three</strong> PPO policies that differ only in the action-rate reward weight $\lambda_{\text{a-rate}} \in \{0,\, {-}0.01,\, {-}0.5\}$, denoted no-reg, some-reg, extreme-reg.</p>
+
+  <h3>Optimal target generation</h3>
+  <p>For each timestep in a 5000-step PPO rollout, we restore the full simulator state into $K{=}16$ parallel environments and generate $K$ candidate actions: candidate 0 is exactly $a_{\text{ppo}}$ (guaranteeing $a^*$ is never worse in cost than the policy's own choice), candidates 1..15 are $a_{\text{ppo}} + \mathcal{N}(0, \sigma^2 I)$ with $\sigma{=}0.1$. Each candidate is rolled out for $H{=}10$ steps with the PPO policy in the loop, accumulating a multi-objective cost</p>
+  <div class="eq">$$a^*_t = \arg\min_a \left( \lambda_1 \cdot \text{tracking} + \lambda_2 \lVert a - a_{t-1} \rVert^2 + \lambda_3 \cdot \text{energy} + \lambda_4 \cdot \text{instability} \right).$$</div>
+  <p>Tracking is $\lVert v_x - v_{\text{cmd}} \rVert^2$, energy is $\sum_i |\tau_i \dot q_i|$, and instability is $\lVert g_z + 1 \rVert^2$ on the projected gravity z-component (penalising tilt), with a 100.0 fall penalty for terminations. We use $\lambda_1{=}3, \lambda_2{=}0.5, \lambda_3{=}0.3, \lambda_4{=}2$ — the "balanced" weights settled on after early experiments with $\lambda_4{=}5$ produced overly cautious targets that barely moved.</p>
+  <p>The resulting $a^*$ trajectory is then Butterworth low-pass filtered per episode at $f_c{=}15$ Hz (2nd order, zero-phase <code>filtfilt</code>) to enforce temporal coherence. Random shooting picks each candidate independently, so the unfiltered $a^*$ trajectory is itself non-smooth despite being physics-aware. We call this the <strong>Bal-LP</strong> target distribution.</p>
+
+  <h3>Velocity network and training</h3>
+  <p>VelocityNet is an MLP[$61 \to 256 \to 256 \to 256 \to 12$] with SiLU activations, where the input concatenates $[x_t \,(12),\, t\,(1),\, s\,(48)]$ and the output is a 12-D velocity prediction. SiLU is chosen over ReLU because integrating a piecewise-linear field with hard corners produces erratic Euler trajectories — smoothness in the activation matches smoothness in the learned field. Training uses AdamW (lr$=10^{-3}$, wd$=10^{-5}$, cosine annealing) for 200 epochs at batch 512, with the CFM loss against OT-path targets. Total parameters: 150,540. Training takes ~30 s on an RTX 5070 Laptop. We train <strong>three</strong> flow models, one per PPO policy, on $a^*$ generated from that policy's rollouts.</p>
+
+  <h3>Inference</h3>
+  <p>At each control step we Euler-integrate the learned ODE from $x_0 = a_{\text{ppo}}$ for $N{=}20$ steps with $dt = t_{\text{end}}/N$. The smoothed action is $a_{\text{fm}} = x_N$. Per-step latency is ~6 ms, well within the 20 ms control budget at 50 Hz.</p>
+
+  <h3>The 9-variant ablation</h3>
+  <p>To isolate the contribution of each design axis we cross three reward levels with four post-hoc smoothing schemes: <strong>raw</strong> (no smoothing), <strong>+Flow</strong> (per-policy Bal-LP flow), <strong>+LP</strong> (causal IIR LP at 15 Hz), <strong>+Flow+LP</strong> (cascade). All variants are evaluated under identical 80-environment push-recovery tests with lateral impulses linearly spaced from 50–500 N, identical seeds, identical initial conditions.</p>
+</section>
+
+<!-- ============== RESULTS ============== -->
+<section id="results">
+  <span class="section-num">§ 04 · Results</span>
+  <h2>Results</h2>
+
+  <figure>
+    <img src="assets/ablation_comparison.png" alt="9-variant ablation comparison: HF spectral energy, fall rate, action jerk, inference latency">
+    <figcaption><strong>Fig 2.</strong> The 9-variant ablation across PPO reward regularisation levels and post-hoc smoothing schemes. Lower is better on all four panels. <strong>Some-reg + Bal-LP Flow</strong> achieves the lowest fall rate (3.75%) by a wide margin; <strong>extreme-reg + Flow</strong> collapses to 100% falls.</figcaption>
+  </figure>
+
+  <h3>Headline ranking</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Variant</th>
+          <th>$\lambda_{\text{a-rate}}$</th>
+          <th>HF >10 Hz</th>
+          <th>$a$-rate RMS</th>
+          <th>Fall rate</th>
+          <th>Inf. (ms)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="winner"><td>Some-reg + Flow</td><td>−0.01</td><td>6.46%</td><td>0.723</td><td>3.75%</td><td>6.0</td></tr>
+        <tr><td>No-reg + Flow</td><td>0</td><td>4.17%</td><td>0.970</td><td>23.75%</td><td>5.6</td></tr>
+        <tr><td>No-reg PPO (raw)</td><td>0</td><td>11.90%</td><td>1.010</td><td>31.25%</td><td>0.013</td></tr>
+        <tr><td>No-reg + LP</td><td>0</td><td>3.32%</td><td>0.888</td><td>33.75%</td><td>0.069</td></tr>
+        <tr><td>No-reg + Flow + LP</td><td>0</td><td>1.23%</td><td>0.915</td><td>37.50%</td><td>5.6</td></tr>
+        <tr><td>Extreme-reg PPO (raw)</td><td>−0.5</td><td>3.74%</td><td>0.049</td><td>46.25%</td><td>0.013</td></tr>
+        <tr><td>Some-reg PPO (raw)</td><td>−0.01</td><td>7.97%</td><td>0.717</td><td>50.00%</td><td>0.013</td></tr>
+        <tr><td>Some-reg + LP</td><td>−0.01</td><td>4.92%</td><td>0.671</td><td>56.25%</td><td>0.065</td></tr>
+        <tr class="disaster"><td>Extreme-reg + Flow</td><td>−0.5</td><td>6.35%</td><td>0.077</td><td>100.00%</td><td>5.7</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The reward-regularisation × flow-matching interaction</h3>
+  <p>The cleanest way to see the interaction is to pair each PPO checkpoint with its own per-policy flow:</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Reg level</th><th>Raw fall rate</th><th>+ Flow</th><th>$\Delta$</th></tr></thead>
+      <tbody>
+        <tr><td>$\lambda{=}0$ (no-reg)</td><td>31.25%</td><td>23.75%</td><td>−7.50 pp</td></tr>
+        <tr class="winner"><td>$\lambda{=}{-}0.01$ (some-reg)</td><td>50.00%</td><td>3.75%</td><td><strong>−46.25 pp</strong></td></tr>
+        <tr class="disaster"><td>$\lambda{=}{-}0.5$ (extreme-reg)</td><td>46.25%</td><td>100.00%</td><td>+53.75 pp</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="pullquote">The action-rate penalty has a sharp sweet spot at $\lambda{=}{-}0.01$: removing it weakens flow's benefit, pushing it extreme breaks the policy so badly that flow makes things worse.</p>
+
+  <h3>Mechanism: why these numbers come out this way</h3>
+  <p><strong>Why some-reg pairs so well with flow.</strong> The $\lambda{=}{-}0.01$ penalty trains a policy that is already biased toward smooth-ish actions, but only weakly — the raw policy still falls 50% of the time. Crucially, this weak prior on smoothness produces rollout data where the random-shooting candidates around $a_{\text{ppo}}$ live in a region of action space that is reasonably well-behaved. When we generate optimal targets from these rollouts, the resulting $a^*$ distribution is both physics-aware <em>and</em> reachable from $a_{\text{ppo}}$ via short OT paths. The flow learns a high-quality velocity field, and at inference it confidently moves actions toward stable, smooth corrections.</p>
+  <p><strong>Why no-reg gains less from flow.</strong> Without any reward-side smoothness signal, the no-reg policy is more aggressive and explores a wider, jerkier region of action space. Its raw fall rate is paradoxically lower (31.25%) because the policy has not been pushed away from rapid corrective actions — it falls less from natural pushes. But its rollout data is messier, the optimal targets that minimise our cost are further from $a_{\text{ppo}}$, and the OT paths the flow must learn are longer and less consistent. The flow still helps (−7.5 pp) but cannot match the some-reg gain.</p>
+  <p><strong>Why extreme-reg + flow collapses.</strong> At $\lambda{=}{-}0.5$ the penalty dominates the reward; the policy converges to a near-static stance ($\bar v_x = -0.001$ m/s, action-rate RMS 0.049) — the robot literally does not walk. Optimal target generation runs on rollouts of an essentially stationary robot, producing an $a^*$ distribution in a tiny region of action space with no useful coverage of locomotion behaviour. The flow learns to push actions toward this near-stationary attractor, and during push tests the robot has no walking gait to recover with. Every push results in a fall.</p>
+  <p><strong>Why Flow+LP underperforms Flow alone.</strong> The cascade no-reg + Flow + LP achieves the lowest HF spectral energy of any variant (1.23%) but a worse fall rate (37.5%) than no-reg + Flow alone (23.75%). The causal IIR filter at the end of the pipeline introduces phase lag exactly when responsiveness matters most — during a push. Smoothing past the point where corrections can land in time is actively harmful. This is the central failure mode of pure filtering: it cannot tell apart jitter from corrective signal, and aggressive smoothing kills both.</p>
+
+  <h3>Smoothness vs jerk: a metric subtlety</h3>
+  <p>HF spectral energy and action jerk (RMS of the discrete second derivative) measure related but distinct things. Spectral energy captures sustained oscillation power above 10 Hz; jerk captures point-to-point change in slope at every timestep. A signal can have low HF energy (no periodic ringing) while having high jerk (each step is a sharp transition to a new flat plateau). This is exactly what happens in our flow-smoothed actions: the flow removes oscillation but the discrete optimal targets it points to are not coupled across timesteps, so the resulting trajectory has clean spectra but is still piecewise-jumpy. Reducing jerk to a level matching extreme-reg's 0.07 RMS would require either much larger $\lambda_2$ in the optimal target cost or a temporal smoother on the flow output.</p>
+</section>
+
+<!-- ============== REFLECTION ============== -->
+<section id="reflection">
+  <span class="section-num">§ 05 · Reflections</span>
+  <h2>What Worked, What Didn't, and the Process of Iteration</h2>
+
+  <h3>The path through five iterations</h3>
+  <p>The first attempted target distribution was a per-joint adaptive low-pass filter applied directly to PPO actions (8–25 Hz cutoffs depending on which joints were noisiest). The flow trained on these targets achieved −19% HF energy and modest fall reduction (50% → 34%) but was unsatisfying: it just delegated low-pass filtering to a 150k-parameter network. Optimal target generation with stability-heavy cost weights ($\lambda_4{=}5$) produced targets that were physics-aware but yielded a robot that barely moved (4.55 m AB-race vs 5.62 m raw). A naive cascade — pipe the optimal flow through the LP flow at inference — gave 22% falls and 4.90 m, simply averaging the two failure modes. Rebalancing the cost weights to $\lambda_1{=}3,\, \lambda_4{=}2$ recovered speed but produced no smoothing benefit on its own. The key insight, arrived at last, was to combine the recipes <em>at the target distribution level</em>: generate targets with balanced weights, LP-filter them before training. The flow then learned a velocity field pointing toward "physics-aware <em>and</em> smooth" — a single objective baked into the data, not separated into two stages.</p>
+
+  <h3>What didn't work</h3>
+  <p>Inference cascading flow models trained independently on different target distributions does not work — the LP flow was trained expecting raw PPO actions as input but received already-corrected actions from the optimal flow, producing an unprincipled blend of both. Pure low-pass filtering at deployment is a poor general-purpose smoother: it is task-blind, introduces phase lag, and as the some-reg + LP variant shows, can actually <em>increase</em> fall rate by suppressing legitimate corrective actions. Pushing reward regularisation aggressively does not produce a better-behaved policy; it produces a non-functional one.</p>
+
+  <h3>What we would change</h3>
+  <p>A learned, state-dependent $t_{\text{end}}$ — applying full smoothing during steady-state walking and dialing back during disturbance recovery — would directly address the Flow+LP failure mode. An attention-based velocity network operating over joint tokens (rather than a flat MLP) could enforce inter-joint coordination explicitly, exploiting the kinematic tree. Sim-to-real evaluation on a physical Go1 is the most important missing piece — our smoothness gains are most valuable for hardware deployment, where actuator bandwidth and contact-model mismatch are the primary failure modes that smoother actions structurally mitigate.</p>
+
+  <h3>Honest limitations</h3>
+  <p>The headline 92% reduction in fall rate is real but comes paired with a 32% reduction in forward speed (5.62 m → 3.85 m AB-race), so the framing matters: this is jitter reduction trading speed for stability, not a free lunch. The $t_{\text{end}}$ knob lets operators sit anywhere on this Pareto front, but the front itself is non-trivial. The 5000-timestep training corpus is small; we have not characterised how the method scales with more data or harder tasks (rough terrain, payload variation). The optimal target generator uses random shooting with $K{=}16$ — a coarse search that almost certainly misses better candidates; gradient-based target optimisation or a larger candidate count would likely improve target quality. Finally, the flow is trained per-policy: we do not have a single flow that works across all three PPO checkpoints, and we have not tested whether one trained on some-reg rollouts transfers to no-reg deployment.</p>
+</section>
+
+<!-- ============== REFERENCES ============== -->
+<section id="references">
+  <span class="section-num">§ 06 · References</span>
+  <h2>References</h2>
+
+  <div class="refs">
+    <div class="ref">
+      <span class="ref-num">[1]</span>
+      <span>Lipman, Y., Chen, R. T. Q., Ben-Hamu, H., Nickel, M., &amp; Le, M. (2023). <em>Flow Matching for Generative Modeling.</em> ICLR. arXiv:2210.02747.</span>
+    </div>
+    <div class="ref">
+      <span class="ref-num">[2]</span>
+      <span>Schulman, J., Wolski, F., Dhariwal, P., Radford, A., &amp; Klimov, O. (2017). <em>Proximal Policy Optimization Algorithms.</em> arXiv:1707.06347.</span>
+    </div>
+    <div class="ref">
+      <span class="ref-num">[3]</span>
+      <span>Mittal, M., et al. (2023). <em>Orbit: A Unified Simulation Framework for Interactive Robot Learning Environments.</em> IEEE RA-L.</span>
+    </div>
+    <div class="ref">
+      <span class="ref-num">[4]</span>
+      <span>Rudin, N., Hoeller, D., Reist, P., &amp; Hutter, M. (2022). <em>Learning to Walk in Minutes Using Massively Parallel Deep Reinforcement Learning.</em> CoRL.</span>
+    </div>
+    <div class="ref">
+      <span class="ref-num">[5]</span>
+      <span>Fjelde, T., Mathieu, E., &amp; Dutordoir, V. (2024). <em>An Introduction to Flow Matching.</em> Cambridge MLG Blog. <a href="https://mlg.eng.cam.ac.uk/blog/2024/01/20/flow-matching.html">https://mlg.eng.cam.ac.uk/blog/2024/01/20/flow-matching.html</a></span>
+    </div>
+    <div class="ref">
+      <span class="ref-num">[6]</span>
+      <span>Tong, A., Malkin, N., Huguet, G., et al. (2023). <em>Improving and Generalizing Flow-Based Generative Models with Minibatch Optimal Transport.</em> arXiv:2302.00482.</span>
+    </div>
+    <div class="ref">
+      <span class="ref-num">[7]</span>
+      <span>Liu, X., Gong, C., &amp; Liu, Q. (2022). <em>Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow.</em> arXiv:2209.03003.</span>
+    </div>
+  </div>
+</section>
+
+</article>
+</div>
+</main>
+
+<footer>
+  <span>16-299 · Carnegie Mellon · Spring 2026</span>
+  <span>Colombo · Shah · Gerdsen · Final Report</span>
+</footer>
+
+</body>
+</html>

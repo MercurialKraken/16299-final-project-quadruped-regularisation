@@ -291,6 +291,9 @@ figcaption {
   border-top: 1px solid var(--rule);
 }
 
+figcaption mjx-container { font-size: 90% !important; }
+figcaption .MathJax { font-size: 90% !important; }
+
 figcaption strong {
   font-style: normal;
   font-weight: 500;
@@ -544,7 +547,7 @@ a:hover { color: var(--text); }
   <text x="360" y="138" text-anchor="middle" font-family="Newsreader, serif" font-size="13" fill="#4A4640">target velocity   <tspan font-style="italic">u_t(x_t | x₀, x₁) = x₁ − x₀</tspan>   (constant along path)</text>
   <text x="360" y="170" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#8A857B" font-style="italic">A neural network u_θ(t, x_t, s) is trained to regress against this displacement at every sampled t.</text>
 </svg>
-    <figcaption><strong>Fig 1.</strong> The OT-path conditional vector field is the constant displacement $x_1 - x_0$. We additionally condition on the robot state $s$, learning $u_\theta(t, x_t, s)$.</figcaption>
+    <figcaption><strong>Fig 1.</strong> The conditional vector field along an OT path is constant — equal to the displacement from source to target. The velocity network additionally conditions on the robot state.</figcaption>
   </figure>
 
   <h3>Why flow matching for jitter reduction?</h3>

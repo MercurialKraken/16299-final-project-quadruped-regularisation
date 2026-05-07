@@ -479,7 +479,7 @@ a:hover { color: var(--text); }
 <section id="abstract">
   <span class="section-num">§ 00 · Abstract</span>
   <h2>Abstract</h2>
-  <p>Reinforcement learning policies trained for legged locomotion achieve high task performance but produce high-frequency, jittery motor commands that accelerate mechanical wear, increase energy consumption, and destabilise contact forces. We treat this as an experimental investigation: <strong>given a frozen, jittery PPO policy, what is the most effective way to reduce its action jitter while preserving — or improving — its task performance?</strong> We compare three families of jitter-reduction techniques: reward-side action-rate regularisation during PPO training, online causal low-pass filtering at deployment, and a learned post-hoc action refinement based on conditional flow matching. We benchmark these methods individually and in combination through a 9-variant ablation crossing three reward regularisation levels with four post-hoc smoothing schemes, evaluated on a Unitree Go1 in NVIDIA Isaac Sim under 80-environment push-recovery stress tests with 50–500 N lateral impulses. The best configuration — moderate reward regularisation paired with a flow-matched refinement trained on physics-aware optimal targets — achieves a <strong>46.25 percentage-point reduction in fall rate</strong> (50.00% → 3.75%) and <strong>−38% high-frequency spectral energy</strong>, while adding only ~6 ms of inference overhead per 20 ms control step. The ablation reveals a sharp interaction: removing reward regularisation weakens the flow's benefit, while pushing it too far breaks the policy so completely that the learned refinement collapses to total failure.</p>
+  <p>Reinforcement learning policies trained to make a quadruped walk usually do so successfully — but the actions they output are jittery. The motors twitch back and forth at high frequency between control steps, producing fluctuating ground forces that destabilise balance, accelerate mechanical wear, and waste energy. We treat this as a practical question: <strong>given a working but jittery PPO policy, what is the best way to reduce its jitter without making it worse at the actual task?</strong> We compare three approaches that intervene at different stages: reward-side action regularisation during PPO training, online causal low-pass filtering at deployment, and a learned post-hoc action refinement using flow matching. We benchmark these methods individually and in combination through a 9-variant ablation crossing three reward regularisation levels with four post-hoc smoothing schemes, evaluated on a Unitree Go1 in NVIDIA Isaac Sim under push-recovery stress tests with 50–500 N lateral impulses applied across 80 parallel environments. The best configuration — moderate reward regularisation paired with a flow-matched refinement trained on physics-aware optimal targets — achieves a <strong>46.25 percentage-point reduction in fall rate</strong> (50.00% → 3.75%) and <strong>−38% high-frequency spectral energy</strong>, while adding only ~6 ms of inference overhead per 20 ms control step. The ablation reveals a sharp interaction between the methods: removing reward regularisation weakens the flow's benefit, while pushing it too far breaks the policy so completely that the learned refinement collapses to total failure. Smoothness, stability, and task performance are not separate dials — they are coupled, and the right combination matters more than any single technique.</p>
 </section>
 
 <!-- ============== BACKGROUND ============== -->
@@ -487,19 +487,30 @@ a:hover { color: var(--text); }
   <span class="section-num">§ 01 · Background</span>
   <h2>Background</h2>
 
-  <h3>Why are RL policies jittery?</h3>
-  <p>A trained PPO policy <cite>[2]</cite> outputs $a_t = \mu_\theta(s_t)$. Because the policy network is locally Lipschitz in its observation, small state perturbations get amplified through its Jacobian:</p>
-  <div class="eq">$$\Delta a_t \approx J_{\mu}(s_{t-1}) \Delta s_t.$$</div>
-  <p>The PPO objective rewards task performance via the clipped surrogate</p>
-  <div class="eq">$$\mathcal{L}^{\text{PPO}}(\theta) = \mathbb{E}_t \left[ \min\!\left( r_t(\theta) \hat{A}_t,\; \text{clip}(r_t(\theta), 1{-}\epsilon, 1{+}\epsilon) \hat{A}_t \right) \right],$$</div>
-  <p>but contains no explicit incentive for smooth actuator commands. On the Unitree Go1's high-gain PD controller ($K_p{=}25,\, K_d{=}0.5$), discontinuous action jumps map directly into torque spikes every 20 ms, producing fluctuating ground reaction forces that destabilise contact. The downstream costs are real: gearbox wear, 20–40% higher instantaneous power draw, audible noise, reduced sim-to-real transfer success, and degraded recovery from disturbances.</p>
+  <h3>Why are PPO policies jittery?</h3>
+  <p>A trained PPO policy outputs an action based only on the current observation: $a_t = \mu_\theta(s_t)$. The policy is essentially a feedforward neural network — give it a state, it gives you back an action. The problem is that this mapping is very sensitive to small changes in the input. If the robot's joint sensors read slightly different values from one timestep to the next (which always happens — sensors are noisy, simulation has numerical noise, contacts cause small jolts), the policy's output can swing significantly.</p>
 
-  <h3>Three families of jitter-reduction methods</h3>
-  <p>We study three approaches that intervene at different stages of the policy lifecycle:</p>
-  <p><strong>(A) Reward-side regularisation.</strong> Add a penalty $\lambda \lVert a_t - a_{t-1} \rVert^2$ directly to the PPO reward, training the policy to prefer smooth actions. This is the IsaacLab default at $\lambda{=}{-}0.01$. It is conceptually clean — smoothness becomes a primary objective — but entangles smoothness with task performance during training, requires retraining whenever the smoothness target changes, and as we will show has a sharp sweet spot.</p>
-  <p><strong>(B) Online filtering.</strong> Apply a causal first-order Butterworth IIR low-pass to actions at deployment time, $y_n = (1{-}\alpha) y_{n-1} + \alpha x_n$ with cutoff $f_c{=}15$ Hz. Cheap and immediate, but task-blind: the filter cannot distinguish between meaningless oscillation and a legitimate rapid corrective action.</p>
-  <p><strong>(C) Learned post-hoc refinement.</strong> Train a generative model offline to map raw policy actions toward task-aware "optimal" targets, applied as a post-processing step at deployment. This is where flow matching comes in. It is computationally heavier than filtering but, in principle, can produce corrections that are both smooth <em>and</em> physics-aware.</p>
-  <p>We are particularly interested in the interaction between these methods. Are they substitutes or complements? Does combining them yield super-additive gains, or do they undo each other? The 9-variant ablation in this report is designed to answer exactly that.</p>
+  <p>You can see why with a simple Taylor expansion. Around the previous state $s_{t-1}$, the change in action is approximately</p>
+  <div class="eq">$$\Delta a_t \approx J_\mu(s_{t-1})\, \Delta s_t,$$</div>
+  <p>where $J_\mu$ is the Jacobian of the policy. If the network has high gains — and PPO networks usually do, because they're trained to be highly responsive — then small $\Delta s_t$ get amplified into large $\Delta a_t$. That amplification is jitter.</p>
+
+  <p>Why doesn't PPO train this away on its own? Because the PPO objective only rewards task performance — it just wants to maximise expected reward via the clipped surrogate</p>
+  <div class="eq">$$\mathcal{L}^{\text{PPO}}(\theta) = \mathbb{E}_t \left[ \min\!\left( r_t(\theta) \hat{A}_t,\; \text{clip}(r_t(\theta), 1{-}\epsilon, 1{+}\epsilon) \hat{A}_t \right) \right].$$</div>
+  <p>Nowhere does it penalise jagged action sequences. As long as the jagged actions track velocity well, PPO is happy. But on the Unitree Go1's high-gain PD controller ($K_p{=}25$), every action discontinuity becomes a torque spike every 20 ms, which destabilises foot contact, accelerates gearbox wear, and burns extra power. Smoothness has to be added by something else.</p>
+
+  <h3>Why jitter matters specifically for legged robots</h3>
+  <p>Balance in a quadruped depends on each foot pushing against the ground with steady, consistent force. When the policy commands the joints to twitch back and forth at high frequency, those forces fluctuate rapidly — feet either slip (too much sideways force in one direction) or briefly lose grip (too little vertical force) instead of maintaining stable contact. When a push hits the robot, it can't apply a sustained corrective force because it's already fighting itself, so it falls. This is why jitter reduction isn't just a cosmetic concern for legged robots: it directly translates into how well the robot recovers from disturbances. The push-recovery experiments later in this report measure exactly this.</p>
+
+  <h3>The three jitter-reduction methods we compared</h3>
+  <p>We considered three different ways to attack this problem, each operating at a different stage of the policy lifecycle:</p>
+
+  <p><strong>(A) Reward-side action regularisation.</strong> Add a penalty $\lambda \lVert a_t - a_{t-1} \rVert^2$ directly into the PPO reward, so the policy learns to prefer smooth actions during training. Isaac Lab uses this by default with $\lambda{=}{-}0.01$. The downside: it requires retraining the policy from scratch whenever you want to change the smoothness target, and it penalises <em>all</em> action changes equally — including the rapid corrections the robot needs to recover from a push. Smoothness fights with task performance in the same loss function.</p>
+
+  <p><strong>(B) Online low-pass filtering.</strong> Take the policy's actions at deployment time and pass them through a low-pass filter (we use a causal first-order Butterworth IIR with a 15 Hz cutoff). Cheap to implement and adds zero training overhead. The problem is the same as (A) but worse: a low-pass filter is completely task-blind. It can't tell the difference between meaningless jitter and a legitimate fast corrective action — it just attenuates everything above the cutoff. If the robot needs a sharp hip flick to catch itself from falling, the filter blunts it, and the robot falls anyway.</p>
+
+  <p><strong>(C) Learned post-hoc refinement (flow matching).</strong> Train a separate model offline to map raw policy actions toward task-aware "better" actions, and apply it as a post-processing step at deployment. The frozen PPO policy stays untouched. This is more involved than the other two but, in principle, can produce corrections that are <em>both</em> smooth <em>and</em> aware of what the robot is actually doing — because the training targets come from rolling out candidate actions in simulation and scoring them on a physics-aware cost function.</p>
+
+  <p>The interesting question isn't which one of these is best in isolation — it's how they interact. Do they stack? Do they fight? Does the right combination beat any single method? The 9-variant ablation later in this report is designed to answer that.</p>
 </section>
 
 <!-- ============== FLOW MATCHING ============== -->
@@ -507,31 +518,33 @@ a:hover { color: var(--text); }
   <span class="section-num">§ 02 · Flow Matching</span>
   <h2>A Brief Introduction to Flow Matching</h2>
 
-  <p>Of the three jitter-reduction methods studied, flow matching is the most novel and warrants explanation. Flow matching <cite>[1]</cite> is a simulation-free training procedure for continuous normalising flows that turns generative modelling into a clean supervised regression problem.</p>
+  <p>Of the three methods we tested, flow matching is the least familiar to most people, so we walk through it carefully here. The intuition first, the math second.</p>
 
-  <h3>From distributions to velocity fields</h3>
-  <p>Suppose we want to transport samples from a source distribution $q_0$ to a target $q_1$. A continuous normalising flow defines a time-dependent vector field $u_t(x)$ whose flow $\phi_t$ is the solution of the ODE</p>
-  <div class="eq">$$\frac{d}{dt} \phi_t(x_0) = u_t(\phi_t(x_0)),\qquad \phi_0(x_0) = x_0,$$</div>
-  <p>and whose induced probability path $p_t$ interpolates $p_0 = q_0$ and $p_1 = q_1$. The continuity equation links the two: $\partial_t p_t = -\nabla \cdot (u_t \, p_t)$. The naive flow-matching loss would regress a network $u_\theta$ against the marginal vector field,</p>
-  <div class="eq">$$\mathcal{L}_{\text{FM}}(\theta) = \mathbb{E}_{t \sim \mathcal{U}[0,1],\; x \sim p_t} \left\lVert u_\theta(t, x) - u_t(x) \right\rVert^2,$$</div>
-  <p>but the marginal $u_t(x)$ is intractable. The Cambridge MLG exposition <cite>[5]</cite> walks through the resolution clearly.</p>
+  <h3>The intuition: learning a "current" between two distributions</h3>
+  <p>Suppose you have a cloud of points $x_0$ — the source — and you want to transport them to a different cloud $x_1$ — the target. A standard approach would be to train a network that takes $x_0$ as input and predicts $x_1$ in one shot. Flow matching does something different: instead of predicting where each point should end up, it learns a <strong>velocity field</strong> — a function that, at every point in space and every moment in time, tells you which direction to move. You then just follow these little arrows step by step until you arrive at the target.</p>
 
-  <h3>Conditional flow matching</h3>
-  <p>Lipman et al. <cite>[1]</cite> show that conditioning on the endpoints $z = (x_0, x_1)$ — a <em>two-sided</em> conditioning — gives a tractable surrogate loss with the same gradient. The <strong>conditional flow matching</strong> objective is</p>
-  <div class="eq">$$\mathcal{L}_{\text{CFM}}(\theta) = \mathbb{E}_{t,\; (x_0, x_1) \sim q,\; x_t \sim p_t(\cdot \mid x_0, x_1)} \left\lVert u_\theta(t, x_t) - u_t(x_t \mid x_0, x_1) \right\rVert^2,$$<span class="eq-num">(CFM)</span></div>
-  <p>and remarkably $\nabla_\theta \mathcal{L}_{\text{CFM}} = \nabla_\theta \mathcal{L}_{\text{FM}}$. Training on the tractable conditional loss yields a network that learns the intractable marginal field <cite>[1]</cite>.</p>
+  <p>Think of it like an ocean current. Every point in the water has a flow direction. Drop a leaf in at the source and it gets carried to the target naturally, without anyone explicitly telling it the destination — it just keeps following the local current. Flow matching trains a neural network to <em>be</em> that current.</p>
 
-  <h3>Optimal transport paths</h3>
-  <p>The choice of conditional path matters. With a deterministic linear interpolation</p>
-  <div class="eq">$$x_t = (1-t)\, x_0 + t\, x_1,\qquad u_t(x_t \mid x_0, x_1) = x_1 - x_0,$$<span class="eq-num">(OT path)</span></div>
-  <p>the conditional vector field is constant along the path and equal to the displacement $x_1 - x_0$ — the optimal transport map under squared-Euclidean cost. This is the path we use throughout. Its key practical property is that learned marginal trajectories tend to be near-straight, which dramatically reduces the number of Euler integration steps needed at inference compared to diffusion models <cite>[6]</cite>.</p>
+  <p>For our problem, the source is the raw PPO action $a_{\text{ppo}}$ and the target is a "better" action $a^*$ (we'll explain how we get $a^*$ in the Method section). The flow matching network learns the current that pushes raw actions toward better ones.</p>
+
+  <h3>The setup</h3>
+  <p>Formally, we define a time variable $t \in [0, 1]$, where $t{=}0$ is the source and $t{=}1$ is the target. The position of a point at time $t$ is $x_t$, and the velocity field we want to learn is $u_t(x)$. If you start at $x_0$ and follow the field, your position evolves according to the ODE</p>
+  <div class="eq">$$\frac{dx_t}{dt} = u_t(x_t),\qquad x_{t=0} = x_0.$$</div>
+  <p>If $u_t$ is the right field, then integrating it from $t{=}0$ to $t{=}1$ gives you a sample from the target distribution. Our job during training is to find this $u_t$.</p>
+
+  <h3>The clever trick: straight-line paths</h3>
+  <p>The most natural choice for a path from $x_0$ to $x_1$ is just a straight line:</p>
+  <div class="eq">$$x_t = (1-t)\, x_0 + t\, x_1.$$</div>
+  <p>Differentiating both sides with respect to $t$ gives the velocity along this path:</p>
+  <div class="eq">$$\frac{dx_t}{dt} = x_1 - x_0.$$</div>
+  <p>So along this straight-line path, the velocity is just the displacement from start to end — it's the same value at every point along the line. This is convenient because we know exactly what the network should output: for any pair of $(x_0, x_1)$ from our training data, the target velocity is the constant vector $x_1 - x_0$.</p>
 
   <figure>
 <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow matching path diagram" style="max-width:100%;height:auto;font-size:initial;">
   <defs>
     <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1A1814"/></marker>
   </defs>
-  <text x="360" y="22" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#8A857B" letter-spacing="0.1em">CONDITIONAL OT PATH FROM x₀ TO x₁</text>
+  <text x="360" y="22" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#8A857B" letter-spacing="0.1em">STRAIGHT-LINE PATH FROM SOURCE TO TARGET</text>
   <circle cx="100" cy="100" r="26" fill="#FBF9F3" stroke="#1A1814" stroke-width="1.5"/>
   <text x="100" y="96" text-anchor="middle" font-family="Newsreader, serif" font-size="14" font-style="italic" fill="#1A1814">x₀</text>
   <text x="100" y="112" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#8A857B">t = 0</text>
@@ -544,14 +557,27 @@ a:hover { color: var(--text); }
   <text x="620" y="112" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#8A857B">t = 1</text>
   <line x1="128" y1="100" x2="592" y2="100" stroke="#1A1814" stroke-width="1.5" marker-end="url(#arr)"/>
   <text x="360" y="78" text-anchor="middle" font-family="Newsreader, serif" font-style="italic" font-size="14" fill="#1A1814">x_t = (1−t)·x₀ + t·x₁</text>
-  <text x="360" y="138" text-anchor="middle" font-family="Newsreader, serif" font-size="13" fill="#4A4640">target velocity   <tspan font-style="italic">u_t(x_t | x₀, x₁) = x₁ − x₀</tspan>   (constant along path)</text>
-  <text x="360" y="170" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#8A857B" font-style="italic">A neural network u_θ(t, x_t, s) is trained to regress against this displacement at every sampled t.</text>
+  <text x="360" y="138" text-anchor="middle" font-family="Newsreader, serif" font-size="13" fill="#4A4640">target velocity along this path = x₁ − x₀   (the same at every t)</text>
+  <text x="360" y="170" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#8A857B" font-style="italic">A neural network u_θ(t, x_t, s) is trained to predict this displacement at every t.</text>
 </svg>
-    <figcaption><strong>Fig 1.</strong> The conditional vector field along an OT path is constant — equal to the displacement from source to target. The velocity network additionally conditions on the robot state.</figcaption>
+    <figcaption><strong>Fig 1.</strong> Pick a source point and a target point. Draw a straight line between them. The velocity along that line is the same everywhere — just the displacement. A neural network learns to predict this displacement at every position and every time.</figcaption>
   </figure>
 
-  <h3>Why flow matching for jitter reduction?</h3>
-  <p>Three properties make flow matching well-suited to this problem. <strong>First</strong>, the regression target $x_1 - x_0$ is fixed and simple — the loss is a clean MSE against a constant displacement, producing stable training without the adversarial or score-matching instabilities of GANs and diffusion models. <strong>Second</strong>, the loss supervises $u_\theta$ at every $t \in [0,1]$ rather than just at the endpoint, acting as an implicit temporal regulariser against noisy targets. This matters because our optimal targets — described next — are computed by argmin over a finite candidate set and are themselves noisy. <strong>Third</strong>, inference via Euler integration with early stopping at $t_{\text{end}} \in [0,1]$ provides a continuous deployment-time intensity dial: $t_{\text{end}}{=}0$ recovers the raw policy, $t_{\text{end}}{=}1$ applies full correction, intermediate values blend smoothly. None of this is possible with a one-shot supervised regressor.</p>
+  <h3>The training objective</h3>
+  <p>So we set up a regression problem. The network $u_\theta$ takes as input the current position $x_t$, the current time $t$, and (in our case) the robot state $s$ for context. It tries to predict the target velocity. The loss is just mean squared error:</p>
+  <div class="eq">$$\mathcal{L}(\theta) = \mathbb{E}_{(x_0, x_1, s) \sim \mathcal{D},\; t \sim \mathcal{U}(0,1)} \left\lVert\, u_\theta(t, x_t, s) - (x_1 - x_0)\, \right\rVert^2.$$</div>
+  <p>For each training example we sample a random pair $(x_0, x_1)$ from our dataset, sample a random time $t \in [0, 1]$, compute the interpolated point $x_t = (1-t)x_0 + t x_1$, and ask the network to predict $x_1 - x_0$. This is the form Lipman et al. <cite>[1]</cite> introduced and is sometimes called "conditional flow matching with optimal-transport paths." The Cambridge MLG blog <cite>[5]</cite> has a clear walk-through of why this loss yields a network that approximates the right velocity field.</p>
+
+  <h3>How we use it at runtime</h3>
+  <p>Once the network is trained, applying it at deployment is straightforward. Start at the raw PPO action $x_0 = a_{\text{ppo}}$, and step forward through time using simple Euler integration:</p>
+  <div class="eq">$$x_{k+1} = x_k + u_\theta(t_k, x_k, s) \cdot \Delta t,\qquad \Delta t = t_{\text{end}}/N.$$</div>
+  <p>After $N$ steps we have our refined action $a_{\text{fm}} = x_N$. We use $N{=}20$ steps. The parameter $t_{\text{end}}$ is interesting: setting $t_{\text{end}}{=}1$ applies the full correction (raw all the way to target), while $t_{\text{end}}{=}0$ leaves the action unchanged. Anything in between is a partial correction. This gives us a continuous knob at deployment time to dial in how aggressively we want to smooth, without ever retraining the network.</p>
+
+  <h3>Why we picked flow matching specifically</h3>
+  <p>We could have used a simpler approach — train a network to map $a_{\text{ppo}}$ directly to $a^*$ in one shot using ordinary regression. Three things made flow matching a better fit:</p>
+  <p><strong>It avoids "averaging" failures.</strong> When multiple different $a^*$ values are equally valid for the same input (which happens because our targets come from picking the best of 16 random candidates — sometimes two candidates are nearly tied but very different), a plain regressor under MSE collapses these to their average, which may not be a valid action at all. Flow matching learns the full distribution of corrections rather than a single point estimate, so it doesn't have this failure mode.</p>
+  <p><strong>The training signal is denser.</strong> A plain regressor is only supervised on the endpoint $a^*$. Flow matching is supervised at every time $t \in [0,1]$ along the path, which gives the network many more constraints from each training pair. This is especially helpful given that our targets are themselves a bit noisy.</p>
+  <p><strong>The deployment-time knob.</strong> The $t_{\text{end}}$ parameter falls out of the formulation for free, and it lets us tune the smoothness/responsiveness trade-off at inference without retraining. A plain regressor doesn't give us this.</p>
 </section>
 
 <!-- ============== METHOD ============== -->
@@ -560,22 +586,36 @@ a:hover { color: var(--text); }
   <h2>Method</h2>
 
   <h3>Environment and base policies</h3>
-  <p>The Unitree Go1 is a 12-DOF quadruped (3 joints per leg). Action space is 12-D joint position offsets from the default stance; observations are 48-D proprioceptive (base linear/angular velocities, projected gravity, velocity commands, joint positions, joint velocities, previous actions). Sim runs at 200 Hz with decimation-4 → 50 Hz control. We train PPO for 300 iterations with 4096 parallel envs in NVIDIA Isaac Lab <cite>[3]</cite>, MLP[128,128,128] ELU actor and critic, GAE($\lambda{=}0.95$), discount $\gamma{=}0.99$, adaptive KL learning-rate schedule. The task is constant forward velocity tracking $v_x = 1.0$ m/s on flat terrain. We train <strong>three</strong> PPO policies that differ only in the action-rate reward weight $\lambda_{\text{a-rate}} \in \{0,\, {-}0.01,\, {-}0.5\}$, denoted no-reg, some-reg, extreme-reg.</p>
+  <p>We use the Unitree Go1 quadruped — a real commercial robot with 12 controllable joints (3 per leg: hip abduction, hip flexion, knee). The action space is 12-dimensional joint position offsets, and the observation is 48-dimensional, containing base linear and angular velocity, projected gravity, the velocity command, all joint positions and velocities, and the previous action. Simulation runs in NVIDIA Isaac Lab <cite>[3]</cite> at 200 Hz with control issued every 4 physics steps, giving an effective 50 Hz control rate. The task is a constant 1.0 m/s forward velocity tracking on flat terrain — deliberately simple, so any improvement we measure is attributable to the smoothing intervention rather than terrain or task complexity.</p>
 
-  <h3>Optimal target generation</h3>
-  <p>For each timestep in a 5000-step PPO rollout, we restore the full simulator state into $K{=}16$ parallel environments and generate $K$ candidate actions: candidate 0 is exactly $a_{\text{ppo}}$ (guaranteeing $a^*$ is never worse in cost than the policy's own choice), candidates 1..15 are $a_{\text{ppo}} + \mathcal{N}(0, \sigma^2 I)$ with $\sigma{=}0.1$. Each candidate is rolled out for $H{=}10$ steps with the PPO policy in the loop, accumulating a multi-objective cost</p>
+  <p>We train PPO for 300 iterations with 4096 parallel environments, MLP[128,128,128] ELU actor and critic, GAE($\lambda{=}0.95$), discount $\gamma{=}0.99$, and an adaptive KL learning-rate schedule. Crucially, we train <strong>three</strong> different PPO policies that differ <em>only</em> in the strength of reward-side action regularisation: $\lambda_{\text{a-rate}} \in \{0,\, {-}0.01,\, {-}0.5\}$, which we call no-reg, some-reg (the IsaacLab default), and extreme-reg. Everything else — seed, environments, hyperparameters — is identical.</p>
+
+  <h3>Generating "better" targets via short-horizon shooting</h3>
+  <p>To train the flow model, we need pairs of (raw PPO action, better action). The "better" action $a^*$ is the key design choice. Our approach is short-horizon random shooting — a form of model-predictive evaluation that doesn't require a learned dynamics model because we have access to the simulator directly.</p>
+
+  <p>For each timestep in a 5000-step PPO rollout, we restore the full simulator state into $K{=}16$ parallel environments. In each environment we try a different candidate action: candidate 0 is exactly the PPO action (this guarantees $a^*$ can never score worse than what PPO would have done), and candidates 1 through 15 are the PPO action plus Gaussian noise with $\sigma{=}0.1$. We let each candidate play out for $H{=}10$ steps with the PPO policy taking over after the first action, then score each rollout with a multi-objective cost:</p>
   <div class="eq">$$a^*_t = \arg\min_a \left( \lambda_1 \cdot \text{tracking} + \lambda_2 \lVert a - a_{t-1} \rVert^2 + \lambda_3 \cdot \text{energy} + \lambda_4 \cdot \text{instability} \right).$$</div>
-  <p>Tracking is $\lVert v_x - v_{\text{cmd}} \rVert^2$, energy is $\sum_i |\tau_i \dot q_i|$, and instability is $\lVert g_z + 1 \rVert^2$ on the projected gravity z-component (penalising tilt), with a 100.0 fall penalty for terminations. We use $\lambda_1{=}3, \lambda_2{=}0.5, \lambda_3{=}0.3, \lambda_4{=}2$ — the "balanced" weights settled on after early experiments with $\lambda_4{=}5$ produced overly cautious targets that barely moved.</p>
-  <p>The resulting $a^*$ trajectory is then Butterworth low-pass filtered per episode at $f_c{=}15$ Hz (2nd order, zero-phase <code>filtfilt</code>) to enforce temporal coherence. Random shooting picks each candidate independently, so the unfiltered $a^*$ trajectory is itself non-smooth despite being physics-aware. We call this the <strong>Bal-LP</strong> target distribution.</p>
+  <p><em>Tracking</em> is $\lVert v_x - v_{\text{cmd}} \rVert^2$ — how well the robot follows the commanded velocity. The <em>jerk</em> term penalises rapid changes in action. <em>Energy</em> is the sum of $|\tau_i \dot q_i|$ over all joints — mechanical power. <em>Instability</em> is $\lVert g_z + 1 \rVert^2$ on the projected gravity z-component, which captures roll and pitch (a perfectly upright robot has $g_z = -1$). A 100.0 fall penalty is added if the robot terminates during the horizon. We use $\lambda_1{=}3,\, \lambda_2{=}0.5,\, \lambda_3{=}0.3,\, \lambda_4{=}2$ — these "balanced" weights were settled on after early experiments with $\lambda_4{=}5$ produced overly cautious targets that barely moved the robot.</p>
 
-  <h3>Velocity network and training</h3>
-  <p>VelocityNet is an MLP[$61 \to 256 \to 256 \to 256 \to 12$] with SiLU activations, where the input concatenates $[x_t \,(12),\, t\,(1),\, s\,(48)]$ and the output is a 12-D velocity prediction. SiLU is chosen over ReLU because integrating a piecewise-linear field with hard corners produces erratic Euler trajectories — smoothness in the activation matches smoothness in the learned field. Training uses AdamW (lr$=10^{-3}$, wd$=10^{-5}$, cosine annealing) for 200 epochs at batch 512, with the CFM loss against OT-path targets. Total parameters: 150,540. Training takes ~30 s on an RTX 5070 Laptop. We train <strong>three</strong> flow models, one per PPO policy, on $a^*$ generated from that policy's rollouts.</p>
+  <p>One important post-processing step: random shooting picks each timestep's candidate independently, so the resulting $a^*$ trajectory is itself non-smooth even though each individual action is physics-aware. We run a Butterworth low-pass filter (2nd order, 15 Hz cutoff, zero-phase <code>filtfilt</code>) over the per-episode $a^*$ trajectories to add temporal coherence before training. We call the resulting target distribution <strong>Bal-LP</strong> (balanced + low-passed).</p>
+
+  <h3>The velocity network</h3>
+  <p>VelocityNet is a small MLP with three hidden layers of 256 units and SiLU activations. The input is the concatenation of the current position $x_t$ (12D), the time $t$ (1D), and the robot state $s$ (48D), totalling 61 dimensions. The output is a 12-dimensional velocity prediction. Total parameter count is about 150,000 — small enough that training takes ~30 seconds on a laptop GPU. We use SiLU rather than ReLU because we're going to integrate this network's output as a vector field, and ReLU's hard kinks would produce erratic Euler trajectories. Smoothness in the activation matches the smoothness we want in the learned current.</p>
+
+  <p>Training uses AdamW (lr $=10^{-3}$, weight decay $=10^{-5}$, cosine annealing) for 200 epochs at batch size 512, using the flow matching loss described in §02. We train <strong>three</strong> separate flow models, one per PPO policy, on $a^*$ generated from that policy's own rollouts.</p>
 
   <h3>Inference</h3>
-  <p>At each control step we Euler-integrate the learned ODE from $x_0 = a_{\text{ppo}}$ for $N{=}20$ steps with $dt = t_{\text{end}}/N$. The smoothed action is $a_{\text{fm}} = x_N$. Per-step latency is ~6 ms, well within the 20 ms control budget at 50 Hz.</p>
+  <p>At each control step we Euler-integrate from $x_0 = a_{\text{ppo}}$ for $N{=}20$ steps with $\Delta t = t_{\text{end}}/N$. The smoothed action is the final position $a_{\text{fm}} = x_N$. End-to-end latency is ~6 ms per control step — well within the 20 ms budget at 50 Hz.</p>
 
   <h3>The 9-variant ablation</h3>
-  <p>To isolate the contribution of each design axis we cross three reward levels with four post-hoc smoothing schemes: <strong>raw</strong> (no smoothing), <strong>+Flow</strong> (per-policy Bal-LP flow), <strong>+LP</strong> (causal IIR LP at 15 Hz), <strong>+Flow+LP</strong> (cascade). All variants are evaluated under identical 80-environment push-recovery tests with lateral impulses linearly spaced from 50–500 N, identical seeds, identical initial conditions.</p>
+  <p>To isolate the contribution of each design choice, we cross the three reward levels with four post-hoc smoothing schemes:</p>
+  <ul style="font-family:'Inter',sans-serif;font-size:14px;line-height:1.7;margin:12px 0 16px 24px;color:var(--text2);list-style:none;">
+    <li style="margin-bottom:6px;"><strong style="color:var(--text);">raw</strong> — no post-hoc smoothing</li>
+    <li style="margin-bottom:6px;"><strong style="color:var(--text);">+ Flow</strong> — per-policy flow matching</li>
+    <li style="margin-bottom:6px;"><strong style="color:var(--text);">+ LP</strong> — causal IIR low-pass filter at 15 Hz</li>
+    <li style="margin-bottom:6px;"><strong style="color:var(--text);">+ Flow + LP</strong> — flow followed by causal LP (cascade)</li>
+  </ul>
+  <p>That gives 9 variants total (3 × 4, minus the single-policy LP we already have). All are evaluated under identical 80-environment push-recovery tests with lateral impulses linearly spaced from 50–500 N, identical seeds, and identical initial conditions.</p>
 </section>
 
 <!-- ============== RESULTS ============== -->
@@ -637,8 +677,8 @@ a:hover { color: var(--text); }
   <p><strong>Why extreme-reg + flow collapses.</strong> At $\lambda{=}{-}0.5$ the penalty dominates the reward; the policy converges to a near-static stance ($\bar v_x = -0.001$ m/s, action-rate RMS 0.049) — the robot literally does not walk. Optimal target generation runs on rollouts of an essentially stationary robot, producing an $a^*$ distribution in a tiny region of action space with no useful coverage of locomotion behaviour. The flow learns to push actions toward this near-stationary attractor, and during push tests the robot has no walking gait to recover with. Every push results in a fall.</p>
   <p><strong>Why Flow+LP underperforms Flow alone.</strong> The cascade no-reg + Flow + LP achieves the lowest HF spectral energy of any variant (1.23%) but a worse fall rate (37.5%) than no-reg + Flow alone (23.75%). The causal IIR filter at the end of the pipeline introduces phase lag exactly when responsiveness matters most — during a push. Smoothing past the point where corrections can land in time is actively harmful. This is the central failure mode of pure filtering: it cannot tell apart jitter from corrective signal, and aggressive smoothing kills both.</p>
 
-  <h3>Smoothness vs jerk: a metric subtlety</h3>
-  <p>HF spectral energy and action jerk (RMS of the discrete second derivative) measure related but distinct things. Spectral energy captures sustained oscillation power above 10 Hz; jerk captures point-to-point change in slope at every timestep. A signal can have low HF energy (no periodic ringing) while having high jerk (each step is a sharp transition to a new flat plateau). This is exactly what happens in our flow-smoothed actions: the flow removes oscillation but the discrete optimal targets it points to are not coupled across timesteps, so the resulting trajectory has clean spectra but is still piecewise-jumpy. Reducing jerk to a level matching extreme-reg's 0.07 RMS would require either much larger $\lambda_2$ in the optimal target cost or a temporal smoother on the flow output.</p>
+  <h3>HF spectral energy vs action jerk: why they tell different stories</h3>
+  <p>HF spectral energy and action jerk both claim to measure "smoothness," but they capture different things. Spectral energy looks at how much sustained oscillation the action signal contains above 10 Hz — it answers "is the motor wobbling at high frequency?" Action jerk is the size of the discrete second derivative at every timestep — it answers "how sharply does the action change from one step to the next?" A signal can have low HF energy (no periodic ringing) while still having high jerk if it makes large, fast, but non-repeating jumps between flat plateaus. That is exactly what happens with our flow-smoothed actions: the flow removes oscillation, but the underlying optimal targets it points to are still chosen independently at each timestep, so the resulting trajectory has clean spectra but is still piecewise-jumpy. Pulling jerk down to extreme-reg's 0.07 RMS would require either a much larger jerk weight in the optimal target cost or a temporal smoother applied to the flow output.</p>
 </section>
 
 <!-- ============== REFLECTION ============== -->

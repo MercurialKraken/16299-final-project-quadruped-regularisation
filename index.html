@@ -495,7 +495,7 @@ a:hover { color: var(--text); }
     </div>
     <div class="byline-item">
       <span>Headline</span>
-      −46 pp falls · −38% HF jitter
+      −46 pp falls · −19% HF jitter
     </div>
   </div>
 </div>
@@ -522,7 +522,7 @@ a:hover { color: var(--text); }
 <section id="abstract">
   <span class="section-num">§ 00 · Abstract</span>
   <h2>Abstract</h2>
-  <p>Reinforcement learning policies trained to make a quadruped walk usually do so successfully, but the actions they output are jittery. The motors twitch back and forth at high frequency between control steps, producing fluctuating ground forces that destabilise balance, accelerate mechanical wear, and waste energy. We treat this as a practical question: <strong>given a working but jittery PPO policy, what is the best way to reduce its jitter without making it worse at the actual task?</strong> We compare three approaches that intervene at different stages: reward-side action regularisation during PPO training, online causal low-pass filtering at deployment, and a learned post-hoc action refinement using flow matching. We benchmark these methods individually and in combination through a 9-variant ablation crossing three reward regularisation levels with four post-hoc smoothing schemes, evaluated on a Unitree Go1 in NVIDIA Isaac Sim under push-recovery stress tests with 50–500 N lateral impulses applied across 80 parallel environments. The best configuration (moderate reward regularisation paired with a flow-matched refinement trained on physics-aware optimal targets) achieves a <strong>46.25 percentage-point reduction in fall rate</strong> (50.00% → 3.75%) and <strong>−38% high-frequency spectral energy</strong>, while adding only ~6 ms of inference overhead per 20 ms control step. The ablation reveals a sharp interaction between the methods: removing reward regularisation weakens the flow's benefit, while pushing it too far breaks the policy so completely that the learned refinement collapses to total failure.</p>
+  <p>Reinforcement learning policies trained to make a quadruped walk usually do so successfully, but the actions they output are jittery. The motors twitch back and forth at high frequency between control steps, producing fluctuating ground forces that destabilise balance, accelerate mechanical wear, and waste energy. We treat this as a practical question: <strong>given a working but jittery PPO policy, what is the best way to reduce its jitter without making it worse at the actual task?</strong> We compare three approaches that intervene at different stages: reward-side action regularisation during PPO training, online causal low-pass filtering at deployment, and a learned post-hoc action refinement using flow matching. We benchmark these methods individually and in combination through a 9-variant ablation crossing three reward regularisation levels with four post-hoc smoothing schemes, evaluated on a Unitree Go1 in NVIDIA Isaac Sim under push-recovery stress tests with 50–500 N lateral impulses applied across 80 parallel environments. The best configuration (moderate reward regularisation paired with a flow-matched refinement trained on physics-aware optimal targets) achieves a <strong>46.25 percentage-point reduction in fall rate</strong> (50.00% → 3.75%) and <strong>−19% high-frequency spectral energy</strong>, while adding only ~6 ms of inference overhead per 20 ms control step. The ablation reveals a sharp interaction between the methods: removing reward regularisation weakens the flow's benefit, while pushing it too far breaks the policy so completely that the learned refinement collapses to total failure.</p>
 </section>
 
 <!-- ============== BACKGROUND ============== -->
@@ -531,7 +531,7 @@ a:hover { color: var(--text); }
   <h2>Background</h2>
 
   <h3>Why are PPO policies jittery?</h3>
-  <p>A trained PPO policy outputs an action based only on the current observation: $a_t = \mu_\theta(s_t)$. The policy is essentially a feedforward neural network: give it a state, it gives you back an action. The problem is that this mapping is very sensitive to small changes in the input. If the robot's joint sensors read slightly different values from one timestep to the next (which always happens, since sensors are noisy, simulation has numerical noise, and contacts cause small jolts), the policy's output can swing significantly.</p>
+  <p>A trained PPO policy outputs an action based only on the current observation. PPO learns a stochastic policy $\pi_\theta(\cdot \mid s_t)$, but at deployment we use its mean: $a_t = \mu_\theta(s_t)$. The policy is essentially a feedforward neural network: give it a state, it gives you back an action. The problem is that this mapping is very sensitive to small changes in the input. If the robot's joint sensors read slightly different values from one timestep to the next (which always happens, since sensors are noisy, simulation has numerical noise, and contacts cause small jolts), the policy's output can swing significantly.</p>
 
   <p>You can see why with a simple Taylor expansion. Around the previous state $s_{t-1}$, the change in action is approximately</p>
   <div class="eq">$$\Delta a_t \approx J_\mu(s_{t-1})\, \Delta s_t,$$</div>
@@ -697,7 +697,7 @@ a:hover { color: var(--text); }
 
   <h3>Inference: integrating the field</h3>
   <p>At deployment we start at $x_0 = a_{\text{ppo}}$ and step forward using Euler integration:</p>
-  <div class="eq">$$x_{k+1} = x_k + u_\theta(t_k, x_k, s) \cdot \Delta t,\qquad \Delta t = t_{\text{end}}/N.$$</div>
+  <div class="eq">$$x_{k+1} = x_k + u_\theta(t_k, x_k, s) \cdot \Delta t,\qquad t_k = k\,\Delta t,\qquad \Delta t = t_{\text{end}}/N.$$</div>
   <p>After $N$ steps the refined action is $a_{\text{fm}} = x_N$. We use $N{=}20$. Each step queries $u_\theta$ afresh at the current position $x_k$, which is what enables the mode-resolution behaviour described above. The full integration takes ~6 ms on a laptop GPU.</p>
 </section>
 
@@ -716,7 +716,7 @@ a:hover { color: var(--text); }
 
   <p>For each timestep in a 5000-step PPO rollout, we restore the full simulator state into $K{=}16$ parallel environments. In each environment we try a different candidate action: candidate 0 is exactly the PPO action (this guarantees $a^*$ can never score worse than what PPO would have done), and candidates 1 through 15 are the PPO action plus Gaussian noise with $\sigma{=}0.1$. We let each candidate play out for $H{=}10$ steps with the PPO policy taking over after the first action, then score each rollout with a multi-objective cost:</p>
   <div class="eq">$$a^*_t = \arg\min_a \left( \lambda_1 \cdot \text{tracking} + \lambda_2 \lVert a - a_{t-1} \rVert^2 + \lambda_3 \cdot \text{energy} + \lambda_4 \cdot \text{instability} \right).$$</div>
-  <p><em>Tracking</em> is $\lVert v_x - v_{\text{cmd}} \rVert^2$, capturing how well the robot follows the commanded velocity. The <em>jerk</em> term penalises rapid changes in action. <em>Energy</em> is the sum of $|\tau_i \dot q_i|$ over all joints, i.e. mechanical power. <em>Instability</em> is $\lVert g_z + 1 \rVert^2$ on the projected gravity z-component, which captures roll and pitch (a perfectly upright robot has $g_z = -1$). A 100.0 fall penalty is added if the robot terminates during the horizon. We use $\lambda_1{=}3,\, \lambda_2{=}0.5,\, \lambda_3{=}0.3,\, \lambda_4{=}2$. These "balanced" weights were settled on after early experiments with $\lambda_4{=}5$ produced overly cautious targets that barely moved the robot.</p>
+  <p><em>Tracking</em> is $(v_x - v_{\text{cmd}})^2$, capturing how well the robot follows the commanded velocity. The <em>action-rate</em> term $\lVert a - a_{t-1} \rVert^2$ penalises rapid changes in action between consecutive steps. <em>Energy</em> is the sum of $|\tau_i \dot q_i|$ over all joints, i.e. mechanical power. <em>Instability</em> is $(g_z + 1)^2$ on the projected gravity z-component, which captures roll and pitch (a perfectly upright robot has $g_z = -1$). A 100.0 fall penalty is added if the robot terminates during the horizon. We use $\lambda_1{=}3,\, \lambda_2{=}0.5,\, \lambda_3{=}0.3,\, \lambda_4{=}2$. These "balanced" weights were settled on after early experiments with $\lambda_4{=}5$ produced overly cautious targets that barely moved the robot.</p>
 
   <p>One important post-processing step: random shooting picks each timestep's candidate independently, so the resulting $a^*$ trajectory is itself non-smooth even though each individual action is physics-aware. We run a Butterworth low-pass filter (2nd order, 15 Hz cutoff, zero-phase <code>filtfilt</code>) over the per-episode $a^*$ trajectories to add temporal coherence before training. We call the resulting target distribution <strong>Bal-LP</strong> (balanced + low-passed).</p>
 

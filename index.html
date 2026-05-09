@@ -571,6 +571,7 @@ a:hover { color: var(--text); }
         <tr><td>$a_{\text{ppo}}$</td><td>Raw action from the frozen PPO policy, $a_{\text{ppo}} = \mu_\theta(s)$</td></tr>
         <tr><td>$a^*$</td><td>"Better" target action found by short-horizon shooting</td></tr>
         <tr><td>$a_{\text{fm}}$</td><td>Refined action after flow integration (deployment output)</td></tr>
+        <tr><td>$q_0,\, q_1$ (also $\pi_0, \pi_1$)</td><td>Source and target distributions in flow matching ($q_0$: cloud of $a_{\text{ppo}}$ outputs across the rollout; $q_1$: cloud of $a^*$ winners). Figure 1 uses $\pi_0, \pi_1$ following the Roelants tutorial convention.</td></tr>
         <tr><td>$x_0,\, x_1$</td><td>Source and target endpoints in flow matching ($x_0 = a_{\text{ppo}}$, $x_1 = a^*$ in our setup)</td></tr>
         <tr><td>$x_t$</td><td>Position along the path at time $t \in [0, 1]$, $\;x_t = (1-t)x_0 + t x_1$</td></tr>
         <tr><td>$x_k$</td><td>Position after the $k$-th Euler step at deployment</td></tr>
@@ -621,84 +622,10 @@ a:hover { color: var(--text); }
 
   <p><strong>3. A deployment-time intensity knob.</strong> Because integration is iterative, you can stop early at any $t_{\text{end}} \in [0, 1]$ to apply a partial correction. $t_{\text{end}}{=}1$ goes all the way to the target distribution; $t_{\text{end}}{=}0$ leaves the source unchanged. A one-shot regressor doesn't give you this without retraining.</p>
 
-  <h3>Setup and notation</h3>
-  <p>We write $x_0 \sim q_0$ for source samples and $x_1 \sim q_1$ for target samples. The velocity field $u_t(x)$ defines the ODE</p>
-  <div class="eq">$$\frac{dx_t}{dt} = u_t(x_t),\qquad x_{t=0} = x_0.$$</div>
-  <p>Following $u_t$ from $t{=}0$ to $t{=}1$ should produce a sample from $q_1$. The challenge is finding a $u_t$ that can be trained without simulating the ODE during training itself.</p>
-
-  <h3>The construction: paths and conditional velocities</h3>
-  <p>Lipman et al. <cite>[1]</cite> resolve this by defining a path between each individual pair $(x_0, x_1)$ and supervising the network on that. Pick a deterministic interpolation</p>
-  <div class="eq">$$x_t = (1-t)\, x_0 + t\, x_1.$$</div>
-  <p>Differentiating with respect to $t$ gives the velocity along this path:</p>
-  <div class="eq">$$\frac{dx_t}{dt} = x_1 - x_0.$$</div>
-  <p>For each individual training pair the velocity is a constant: the displacement. But the network does not see one pair in isolation. It sees the entire dataset, and any given point in space lies on many paths (each defined by a different pair), exactly as the bottom panel of Figure 1 visualises. The marginal velocity that the network learns at a given $(t, x)$ is the <em>average</em> over all training paths passing through that point at that time, weighted by the conditional density. The Cambridge MLG blog <cite>[5]</cite> walks through this averaging carefully. Figure 2 zooms in on the simplest non-trivial instance, a single source with two distinct targets, to show how the trajectory still commits to one mode rather than collapsing to the mean once it drifts off the midline.</p>
-
-  <figure>
-<svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow matching with multiple training paths" style="max-width:100%;height:auto;font-size:initial;">
-  <defs>
-    <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1A1814"/></marker>
-    <marker id="arrR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#B5341B"/></marker>
-    <marker id="arrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1F4D3E"/></marker>
-  </defs>
-
-  <!-- Title at top, centered -->
-  <text x="360" y="28" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#8A857B" letter-spacing="0.1em">VELOCITY FIELD WITH TWO TARGETS</text>
-
-  <!-- Source x0 -->
-  <circle cx="100" cy="170" r="22" fill="#FBF9F3" stroke="#1A1814" stroke-width="1.5"/>
-  <text x="100" y="174" text-anchor="middle" font-family="Newsreader, serif" font-size="14" font-style="italic" fill="#1A1814">x₀</text>
-
-  <!-- Target A (top) -->
-  <circle cx="620" cy="90" r="22" fill="#FBF9F3" stroke="#B5341B" stroke-width="1.5"/>
-  <text x="620" y="94" text-anchor="middle" font-family="Newsreader, serif" font-size="13" font-style="italic" fill="#B5341B">x₁ᴬ</text>
-
-  <!-- Target B (bottom) -->
-  <circle cx="620" cy="250" r="22" fill="#FBF9F3" stroke="#1F4D3E" stroke-width="1.5"/>
-  <text x="620" y="254" text-anchor="middle" font-family="Newsreader, serif" font-size="13" font-style="italic" fill="#1F4D3E">x₁ᴮ</text>
-
-  <!-- Dashed path to A -->
-  <line x1="120" y1="158" x2="600" y2="100" stroke="#B5341B" stroke-width="1" stroke-dasharray="5 4" opacity="0.5"/>
-  <!-- Dashed path to B -->
-  <line x1="120" y1="182" x2="600" y2="240" stroke="#1F4D3E" stroke-width="1" stroke-dasharray="5 4" opacity="0.5"/>
-
-  <!-- Average velocity at x0 (horizontal black arrow) -->
-  <line x1="125" y1="170" x2="220" y2="170" stroke="#1A1814" stroke-width="2.5" marker-end="url(#arr2)"/>
-  <text x="172" y="158" text-anchor="middle" font-family="Newsreader, serif" font-style="italic" font-size="12" fill="#1A1814">average direction</text>
-
-  <!-- Intermediate point drifted toward A -->
-  <circle cx="345" cy="130" r="7" fill="#FBF9F3" stroke="#B5341B" stroke-width="1.2"/>
-  <line x1="353" y1="125" x2="445" y2="108" stroke="#B5341B" stroke-width="2.2" marker-end="url(#arrR)"/>
-
-  <!-- Intermediate point drifted toward B -->
-  <circle cx="345" cy="210" r="7" fill="#FBF9F3" stroke="#1F4D3E" stroke-width="1.2"/>
-  <line x1="353" y1="215" x2="445" y2="232" stroke="#1F4D3E" stroke-width="2.2" marker-end="url(#arrG)"/>
-
-  <!-- Legend block at bottom (clean, inside box) -->
-  <line x1="80" y1="290" x2="640" y2="290" stroke="#1A1814" stroke-width="0.5" opacity="0.15"/>
-
-  <g font-family="Inter, sans-serif" font-size="11" fill="#4A4640">
-    <circle cx="100" cy="305" r="4" fill="#1A1814"/>
-    <text x="112" y="309">average velocity at source</text>
-
-    <circle cx="290" cy="305" r="4" fill="#B5341B"/>
-    <text x="302" y="309">drifted toward A: points to A</text>
-
-    <circle cx="510" cy="305" r="4" fill="#1F4D3E"/>
-    <text x="522" y="309">drifted toward B: points to B</text>
-  </g>
-</svg>
-    <figcaption><strong>Fig 2.</strong> Two training pairs share the same source but go to different targets. At the source, the network averages over both directions. Once the trajectory has drifted off the midline, the velocity at the new position is no longer ambiguous; it points to whichever mode the trajectory is closer to. This is how flow matching avoids the mode-averaging failure of one-shot regression.</figcaption>
-  </figure>
-
-  <h3>The training objective</h3>
-  <p>Training the velocity field to match each path's displacement reduces to a clean MSE regression. For each training step, sample a pair $(x_0, x_1)$ from the dataset and a time $t \sim \mathcal{U}(0, 1)$, form $x_t = (1-t)x_0 + t x_1$, and minimise</p>
+  <h3>Training objective</h3>
+  <p>For each training pair $(x_0, x_1)$ we use the straight-line interpolation $x_t = (1-t)x_0 + t x_1$. Differentiating gives a per-pair velocity that is constant in $t$ and equal to the displacement $x_1 - x_0$. The conditional flow matching loss of Lipman et al. <cite>[1]</cite> then reduces to a clean MSE regression: sample a pair, sample a time $t \sim \mathcal{U}(0, 1)$, form $x_t$, and fit the network to predict that displacement.</p>
   <div class="eq">$$\mathcal{L}_{\text{CFM}}(\theta) = \mathbb{E}_{(x_0, x_1) \sim q,\ t \sim \mathcal{U}(0,1)} \big\lVert\, u_\theta(t, x_t, s) - (x_1 - x_0)\, \big\rVert^2.$$<span class="eq-num">(CFM)</span></div>
-  <p>This is the conditional flow matching loss in the form introduced by Lipman et al. <cite>[1]</cite>, with the linear interpolation choice known as the optimal-transport path. We additionally condition the network on the robot state $s$, since the right correction depends on the situation the robot is in. Despite training only on individual pairs, the resulting $u_\theta$ approximates the marginal velocity field over the full distribution. This is the central result of the flow matching paper.</p>
-
-  <h3>Inference: integrating the field</h3>
-  <p>At deployment we start at $x_0 = a_{\text{ppo}}$ and step forward using Euler integration:</p>
-  <div class="eq">$$x_{k+1} = x_k + u_\theta(t_k, x_k, s) \cdot \Delta t,\qquad t_k = k\,\Delta t,\qquad \Delta t = t_{\text{end}}/N.$$</div>
-  <p>After $N$ steps the refined action is $a_{\text{fm}} = x_N$. We use $N{=}20$. Each step queries $u_\theta$ afresh at the current position $x_k$, which is what enables the mode-resolution behaviour described above. The full integration takes ~6 ms on a laptop GPU.</p>
+  <p>Despite supervision on individual pairs only, the resulting $u_\theta$ approximates the <em>marginal</em> velocity field over the full distribution. The Cambridge MLG blog <cite>[5]</cite> and the Roelants tutorial <cite>[8]</cite> walk through the marginal-equals-conditional-expectation argument carefully, so we don't repeat it here. Deployment-time details (the Euler integrator, $N$, latency budget) are in §03.</p>
 </section>
 
 <!-- ============== METHOD ============== -->
@@ -746,7 +673,7 @@ a:hover { color: var(--text); }
 
   <figure>
     <img src="assets/ablation_comparison.png" alt="9-variant ablation comparison: HF spectral energy, fall rate, action jerk, inference latency">
-    <figcaption><strong>Fig 3.</strong> The 9-variant ablation across PPO reward regularisation levels and post-hoc smoothing schemes. Lower is better on all four panels. <strong>Some-reg + Bal-LP Flow</strong> achieves the lowest fall rate (3.75%) by a wide margin; <strong>extreme-reg + Flow</strong> collapses to 100% falls.</figcaption>
+    <figcaption><strong>Fig 2.</strong> The 9-variant ablation across PPO reward regularisation levels and post-hoc smoothing schemes. Lower is better on all four panels. <strong>Some-reg + Bal-LP Flow</strong> achieves the lowest fall rate (3.75%) by a wide margin; <strong>extreme-reg + Flow</strong> collapses to 100% falls.</figcaption>
   </figure>
 
   <h3>Headline ranking</h3>

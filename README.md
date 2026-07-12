@@ -49,14 +49,10 @@ treatments. These are the clips shown on the [project site](https://mercurialkra
   </tr>
   <tr>
     <td>
-      <video src="https://github.com/MercurialKraken/16299-final-project-quadruped-regularisation/raw/main/assets/push_video_raw.mp4" controls muted loop playsinline width="100%">
-        <a href="assets/push_video_raw.mp4">▶ push_video_raw.mp4</a>
-      </video>
+      <a href="assets/push_video_raw.mp4"><img src="assets/push_video_raw.gif" width="100%" alt="Some-reg PPO, raw"></a>
     </td>
     <td>
-      <video src="https://github.com/MercurialKraken/16299-final-project-quadruped-regularisation/raw/main/assets/push_video_ballp.mp4" controls muted loop playsinline width="100%">
-        <a href="assets/push_video_ballp.mp4">▶ push_video_ballp.mp4</a>
-      </video>
+      <a href="assets/push_video_ballp.mp4"><img src="assets/push_video_ballp.gif" width="100%" alt="Some-reg + Bal-LP Flow"></a>
     </td>
   </tr>
 </table>
@@ -71,16 +67,14 @@ corrective hip-flicks needed to catch a push, so it actually falls *more* than t
   </tr>
   <tr>
     <td>
-      <video src="https://github.com/MercurialKraken/16299-final-project-quadruped-regularisation/raw/main/assets/push_video_lp.mp4" controls muted loop playsinline width="100%">
-        <a href="assets/push_video_lp.mp4">▶ push_video_lp.mp4</a>
-      </video>
+      <a href="assets/push_video_lp.mp4"><img src="assets/push_video_lp.gif" width="100%" alt="Some-reg + Causal IIR LP"></a>
     </td>
   </tr>
 </table>
 
 > [!NOTE]
-> GitHub keeps native video controls but strips `autoplay`/`loop`, so press play. If a clip
-> doesn't render inline, use the fallback link inside it to download the `.mp4` from `assets/`.
+> The previews above are looping GIFs, which animate inline on GitHub. Click any preview to
+> open the full-quality `.mp4` in [`assets/`](assets).
 
 | Asset | Variant | Fall rate |
 |---|---|---|

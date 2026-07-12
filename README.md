@@ -126,16 +126,19 @@ walks) that the flow makes things worse.
 │   ├── push_video_raw.mp4     # some-reg, raw
 │   ├── push_video_ballp.mp4   # some-reg + Bal-LP flow (winner)
 │   └── push_video_lp.mp4      # some-reg + causal IIR low-pass
-└── src/                       # Ablation package: code, configs, trained flow models, results
-    ├── README.md              # Deep-dive: math, full pipeline, how to reproduce
-    ├── PROJECT_KNOWLEDGE_BASE.md
-    ├── Ablation_Report.docx
-    ├── code/                  # ablation + core scripts (training, target gen, flow, eval)
-    ├── configs/               # Isaac Lab PPO env/agent configs
-    ├── flow_models/           # 3 trained Bal-LP flow models (one per λ)
-    ├── data_extracts/         # per-topic JSON summaries
-    └── results/               # results.csv/json + per-variant push/rollout npz
+└── src/                       # → git submodule: github.com/PaulCarnegie10/quadruped-flow-matching
+    ├── README.md              # Code-repo overview + pipeline at a glance
+    ├── code/                  # training / evaluation / analysis / visualization / utilities
+    ├── configs/               # RSL-RL / Isaac Lab YAML configs (flat + rough)
+    ├── data/                  # JSON extracts from training & eval runs
+    └── docs/
+        └── PROJECT_KNOWLEDGE_BASE.md   # Full write-up: math, decisions, results
 ```
+
+`src/` is a **git submodule** pointing at the canonical code repo
+[`PaulCarnegie10/quadruped-flow-matching`](https://github.com/PaulCarnegie10/quadruped-flow-matching).
+Clone this repo with `git clone --recurse-submodules …`, or in an existing clone run
+`git submodule update --init` to populate it.
 
 The live site is published from `index.html` at
 **https://mercurialkraken.github.io/16299-final-project-quadruped-regularisation/**.
@@ -149,13 +152,16 @@ a physics-aware cost (tracking + jerk + energy + stability) to produce "better" 
 `a*`. We low-pass-filter those target trajectories (2nd-order Butterworth, 15 Hz, zero-phase) —
 the **Bal-LP** recipe — then train a small conditional flow-matching velocity network to transport
 raw PPO actions toward them, integrated with 20 Euler steps at deployment (~6 ms). Full derivation
-and reproduction steps are in [`src/README.md`](src/README.md).
+and reproduction steps are in [`src/docs/PROJECT_KNOWLEDGE_BASE.md`](src/docs/PROJECT_KNOWLEDGE_BASE.md).
 
 ## Reproducing
 
-Everything (prerequisites, exact commands, hyperparameters) is documented in
-[`src/README.md`](src/README.md) and [`src/PROJECT_KNOWLEDGE_BASE.md`](src/PROJECT_KNOWLEDGE_BASE.md).
-Runs target NVIDIA Isaac Sim 5.1 + Isaac Lab.
+The code lives in the `src/` submodule (canonical repo:
+[`PaulCarnegie10/quadruped-flow-matching`](https://github.com/PaulCarnegie10/quadruped-flow-matching)).
+Prerequisites, exact commands, and hyperparameters are documented in
+[`src/README.md`](src/README.md) and [`src/docs/PROJECT_KNOWLEDGE_BASE.md`](src/docs/PROJECT_KNOWLEDGE_BASE.md).
+Runs target NVIDIA Isaac Sim 5.1 + Isaac Lab. If you cloned without submodules, run
+`git submodule update --init` first.
 
 ## Authors
 

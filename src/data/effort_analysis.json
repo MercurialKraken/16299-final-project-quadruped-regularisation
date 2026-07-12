@@ -1,0 +1,31 @@
+{
+  "num_envs": 20,
+  "max_steps": 500,
+  "dt": 0.02,
+  "total_time_s": 10.0,
+  "action_rate_rms": {
+    "raw": 0.7431,
+    "smoothed": 0.7311
+  },
+  "jerk_rms": {
+    "raw": 0.6972,
+    "smoothed": 0.6642
+  },
+  "mean_power_W": {
+    "raw": 12.0765,
+    "smoothed": 11.5852
+  },
+  "torque_rms": {
+    "raw": 5.4886,
+    "smoothed": 5.495
+  },
+  "falls": {
+    "raw": 0,
+    "smoothed": 0
+  },
+  "reductions": {
+    "action_rate_pct": 1.6,
+    "jerk_pct": 4.7,
+    "power_pct": 4.1
+  }
+}

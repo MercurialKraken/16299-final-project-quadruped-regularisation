@@ -1,0 +1,3 @@
+[submodule "src"]
+	path = src
+	url = https://github.com/PaulCarnegie10/quadruped-flow-matching

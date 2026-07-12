@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Training artifacts (keep configs + json extracts, drop raw runs)
+*.npz
+*.pt
+*.pth
+*.ckpt
+runs/
+logs/
+wandb/
+outputs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/
+
+# Build
+dist/
+build/

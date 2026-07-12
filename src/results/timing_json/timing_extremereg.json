@@ -1,0 +1,6 @@
+{
+  "variant": "extremereg",
+  "iters_total": 300,
+  "wall_total_s": 341.35896372795105,
+  "wall_per_iter_s_avg": 1.1378632124265036
+}

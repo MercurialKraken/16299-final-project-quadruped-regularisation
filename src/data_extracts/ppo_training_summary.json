@@ -1,0 +1,23 @@
+{
+  "noreg": {
+    "wall_total_s": 367.96512603759766,
+    "iters_total": 300,
+    "wall_per_iter_s_avg": 1.2265504201253254,
+    "note": null,
+    "action_rate_l2_weight": null
+  },
+  "somereg": {
+    "wall_total_s": null,
+    "iters_total": 300,
+    "wall_per_iter_s_avg": null,
+    "note": "pre-instrumentation",
+    "action_rate_l2_weight": -0.01
+  },
+  "extremereg": {
+    "wall_total_s": 341.35896372795105,
+    "iters_total": 300,
+    "wall_per_iter_s_avg": 1.1378632124265036,
+    "note": null,
+    "action_rate_l2_weight": null
+  }
+}

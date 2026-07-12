@@ -1,0 +1,11 @@
+{
+  "variant_name": "somereg_lp",
+  "task": "Isaac-Velocity-Flat-Unitree-Go1-v0",
+  "action_rate_l2_weight": -0.01,
+  "max_iterations": 300,
+  "num_envs": 4096,
+  "seed": 42,
+  "source": "existing_checkpoint_2026-04-06_12-42-26",
+  "lp_cutoff_hz": 15.0,
+  "lp_order": 2
+}

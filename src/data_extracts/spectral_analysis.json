@@ -1,0 +1,74 @@
+{
+  "noreg": {
+    "hf_energy_pct": 11.895581826601315,
+    "action_rate_rms": 1.00973379611969,
+    "jerk_rms": 1.1702803373336792,
+    "mean_vx": 1.0307672023773193,
+    "mean_power_w": 7084.51904296875,
+    "action_rate_l2_weight": null
+  },
+  "somereg": {
+    "hf_energy_pct": 7.974546287795235,
+    "action_rate_rms": 0.7170363068580627,
+    "jerk_rms": 0.6769727468490601,
+    "mean_vx": 1.0669244527816772,
+    "mean_power_w": 5536.90087890625,
+    "action_rate_l2_weight": -0.01
+  },
+  "extremereg": {
+    "hf_energy_pct": 3.738460864079945,
+    "action_rate_rms": 0.04933354631066322,
+    "jerk_rms": 0.07147340476512909,
+    "mean_vx": -0.001108085853047669,
+    "mean_power_w": 535.1258544921875,
+    "action_rate_l2_weight": null
+  },
+  "noreg_flow": {
+    "hf_energy_pct": 4.172248065845549,
+    "action_rate_rms": 0.970097005367279,
+    "jerk_rms": 0.9829539060592651,
+    "mean_vx": 1.0307672023773193,
+    "mean_power_w": 7084.51904296875,
+    "action_rate_l2_weight": null
+  },
+  "noreg_lp": {
+    "hf_energy_pct": 3.321546397171746,
+    "action_rate_rms": 0.8881681561470032,
+    "jerk_rms": 0.8490204811096191,
+    "mean_vx": 1.0307672023773193,
+    "mean_power_w": 7084.51904296875,
+    "action_rate_l2_weight": null
+  },
+  "somereg_lp": {
+    "hf_energy_pct": 4.924245105834228,
+    "action_rate_rms": 0.6707444190979004,
+    "jerk_rms": 0.5255336165428162,
+    "mean_vx": 1.0669244527816772,
+    "mean_power_w": 5536.90087890625,
+    "action_rate_l2_weight": -0.01
+  },
+  "noreg_flow_lp": {
+    "hf_energy_pct": 1.234844826710838,
+    "action_rate_rms": 0.9147765040397644,
+    "jerk_rms": 0.8407637476921082,
+    "mean_vx": 1.0307672023773193,
+    "mean_power_w": 7084.51904296875,
+    "action_rate_l2_weight": null
+  },
+  "somereg_flow": {
+    "hf_energy_pct": 6.459001874522024,
+    "action_rate_rms": 0.7226992249488831,
+    "jerk_rms": 0.6473562121391296,
+    "mean_vx": 1.0669244527816772,
+    "mean_power_w": 5536.90087890625,
+    "action_rate_l2_weight": null
+  },
+  "extremereg_flow": {
+    "hf_energy_pct": 6.348793712581982,
+    "action_rate_rms": 0.07686788588762283,
+    "jerk_rms": 0.12397778779268265,
+    "mean_vx": -0.001108085853047669,
+    "mean_power_w": 535.1258544921875,
+    "action_rate_l2_weight": null
+  }
+}
